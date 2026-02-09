@@ -1,0 +1,7 @@
+# User Bio
+
+user_bio:
+    user_name = input ("What is your name?")
+    user_age = input ("Age?")
+    user_games = input ("What games do you play?")
+    user_location = input ("Nearest MRT station?")
