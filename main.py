@@ -50,6 +50,48 @@ def main():
             f"Location: {person.location}"
         )
     
+    @bot.command()
+    async def send(ctx):
+        """Send a message"""
+        await ctx.send("FUCK YOU ALL")
+    
+    @bot.command()
+    async def compare(ctx, member: discord.Member):
+        """Compare your profile with another user"""
+        user1 = user_data.get(ctx.author.id)
+        user2 = user_data.get(member.id)
+        
+        if not user1 or not user2:
+            await ctx.send("❌ Both users need profiles to compare!")
+            return
+        
+        common_games = set(user1.games) & set(user2.games)
+        age_diff = abs(user1.age - user2.age)
+        
+        embed = discord.Embed(
+            title=f"Comparison: {user1.name} vs {user2.name}",
+            color=discord.Color.purple()
+        )
+        embed.add_field(name="Common Games", value=", ".join(common_games) if common_games else "None", inline=False)
+        embed.add_field(name="Age Difference", value=f"{age_diff} years", inline=True)
+        
+        await ctx.send(embed=embed)
+    
+    @bot.command()
+    async def setprofile(ctx, name: str, age: int, location: str, *, games: str):
+        """Set your profile: !setprofile Name Age Location Games,Separated,By,Commas"""
+        games_list = [game.strip() for game in games.split(",")]
+        
+        person = Person(
+            name=name,
+            age=age,
+            games=games_list,
+            location=location
+        )
+        
+        user_data[ctx.author.id] = person
+        await ctx.send(f"✅ Profile created for {ctx.author.mention}!")
+    
     # Use environment variable for token
     token = os.getenv('DISCORD_TOKEN')
     if not token:
