@@ -23,7 +23,7 @@ def get_location_by_ip():
         print(f"Error connecting to the API: {e}")
         return None
 
-user_bio:
+def user_bio():
     user_name = input ("What is your name?")
     user_age = input ("Age?")
     user_games = input ("What games do you play?")
