@@ -82,6 +82,16 @@ def main():
     @bot.event
     async def on_ready():
         print(f'{bot.user} has connected to Discord!')
+
+    @bot.command()
+    async def send(ctx):
+        """Send a message"""
+        await ctx.send("FUCK YOU ALL")
+
+    @bot.command()
+    async def receive(ctx):
+        """Send a message"""
+        await ctx.send("I'm going to pound your ass")
     
     @bot.command()
     async def profile(ctx, member: discord.Member = None):
