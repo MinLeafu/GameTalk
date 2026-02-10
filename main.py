@@ -20,7 +20,7 @@ class Person:
         self.name = name
         self.age = age
         self.games = games if games else []
-        self.location = location[2]
+        self.location = location
         self.bio = bio
         self.photo_url = photo_url
 
@@ -395,7 +395,7 @@ def main():
             
             location_data = get_location_by_ip()
             if location_data:
-                location = f"{location_data[2]}, {location_data[3]}"
+                location = location_data[2]  # Just the city
                 await ctx.send(f"📍 Detected location: **{location}**")
             else:
                 await ctx.send("**What is your location?** (e.g., New York, USA)")
@@ -760,6 +760,14 @@ def main():
         await setup(ctx)
     
     @bot.command()
+    async def send(ctx):
+        """Fun command for friends"""
+        await ctx.send("FUCK YOU ALL")
+    
+    async def receive(ctx):
+        """Fun command for friends"""
+        await ctx.send("IM GNA POUND YOU")
+
     async def help_gametalk(ctx):
         """Show all available commands"""
         embed = discord.Embed(
