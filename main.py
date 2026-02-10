@@ -7,6 +7,7 @@ import requests
 import aiohttp
 from datetime import datetime, timedelta
 from discord.ui import View, Button, Select
+from math import radians, cos, sin, asin, sqrt
 
 # Store user data (in production, use a database)
 user_data = {}
@@ -14,6 +15,165 @@ user_data = {}
 active_connections = {}  # {(user1_id, user2_id): {'timestamp': datetime, 'user1_decision': None, 'user2_decision': None}}
 # Maximum connections per user
 MAX_CONNECTIONS = 5
+
+# Singapore MRT Stations with approximate coordinates (latitude, longitude)
+MRT_COORDINATES = {
+    # North-South Line
+    "Jurong East": (1.3333, 103.7422),
+    "Bukit Batok": (1.3490, 103.7497),
+    "Bukit Gombak": (1.3587, 103.7518),
+    "Choa Chu Kang": (1.3854, 103.7443),
+    "Yew Tee": (1.3970, 103.7472),
+    "Kranji": (1.4250, 103.7619),
+    "Marsiling": (1.4327, 103.7740),
+    "Woodlands": (1.4370, 103.7868),
+    "Admiralty": (1.4406, 103.8009),
+    "Sembawang": (1.4491, 103.8202),
+    "Canberra": (1.4430, 103.8297),
+    "Yishun": (1.4296, 103.8350),
+    "Khatib": (1.4172, 103.8329),
+    "Yio Chu Kang": (1.3818, 103.8450),
+    "Ang Mo Kio": (1.3700, 103.8495),
+    "Bishan": (1.3510, 103.8484),
+    "Braddell": (1.3405, 103.8468),
+    "Toa Payoh": (1.3326, 103.8476),
+    "Novena": (1.3204, 103.8438),
+    "Newton": (1.3127, 103.8383),
+    "Orchard": (1.3044, 103.8318),
+    "Somerset": (1.3007, 103.8390),
+    "Dhoby Ghaut": (1.2990, 103.8455),
+    "City Hall": (1.2932, 103.8519),
+    "Raffles Place": (1.2837, 103.8512),
+    "Marina Bay": (1.2762, 103.8541),
+    "Marina South Pier": (1.2712, 103.8633),
+    
+    # East-West Line
+    "Pasir Ris": (1.3730, 103.9493),
+    "Tampines": (1.3536, 103.9456),
+    "Simei": (1.3434, 103.9533),
+    "Tanah Merah": (1.3275, 103.9464),
+    "Bedok": (1.3240, 103.9300),
+    "Kembangan": (1.3210, 103.9130),
+    "Eunos": (1.3196, 103.9034),
+    "Paya Lebar": (1.3177, 103.8926),
+    "Aljunied": (1.3164, 103.8826),
+    "Kallang": (1.3114, 103.8714),
+    "Lavender": (1.3075, 103.8631),
+    "Bugis": (1.3006, 103.8560),
+    "Tanjong Pagar": (1.2765, 103.8457),
+    "Outram Park": (1.2803, 103.8395),
+    "Tiong Bahru": (1.2862, 103.8269),
+    "Redhill": (1.2896, 103.8172),
+    "Queenstown": (1.2942, 103.8060),
+    "Commonwealth": (1.3025, 103.7980),
+    "Buona Vista": (1.3071, 103.7904),
+    "Dover": (1.3113, 103.7786),
+    "Clementi": (1.3150, 103.7652),
+    "Chinese Garden": (1.3425, 103.7325),
+    "Lakeside": (1.3444, 103.7210),
+    "Boon Lay": (1.3389, 103.7058),
+    "Pioneer": (1.3375, 103.6974),
+    "Joo Koon": (1.3276, 103.6782),
+    "Gul Circle": (1.3194, 103.6606),
+    "Tuas Crescent": (1.3209, 103.6493),
+    "Tuas West Road": (1.3300, 103.6394),
+    "Tuas Link": (1.3404, 103.6367),
+    
+    # Circle Line
+    "Bras Basah": (1.2969, 103.8509),
+    "Esplanade": (1.2936, 103.8555),
+    "Promenade": (1.2930, 103.8610),
+    "Nicoll Highway": (1.2999, 103.8634),
+    "Stadium": (1.3031, 103.8754),
+    "Mountbatten": (1.3063, 103.8822),
+    "Dakota": (1.3082, 103.8881),
+    "MacPherson": (1.3267, 103.8902),
+    "Tai Seng": (1.3357, 103.8882),
+    "Bartley": (1.3425, 103.8793),
+    "Serangoon": (1.3496, 103.8734),
+    "Lorong Chuan": (1.3516, 103.8636),
+    "Marymount": (1.3487, 103.8394),
+    "Caldecott": (1.3378, 103.8394),
+    "Botanic Gardens": (1.3225, 103.8155),
+    "Farrer Road": (1.3172, 103.8075),
+    "Holland Village": (1.3120, 103.7963),
+    "one-north": (1.2996, 103.7875),
+    "Kent Ridge": (1.2935, 103.7845),
+    "Haw Par Villa": (1.2823, 103.7818),
+    "Pasir Panjang": (1.2762, 103.7912),
+    "Labrador Park": (1.2722, 103.8030),
+    "Telok Blangah": (1.2704, 103.8096),
+    "HarbourFront": (1.2653, 103.8220),
+    
+    # Downtown Line
+    "Bukit Panjang": (1.3787, 103.7619),
+    "Cashew": (1.3693, 103.7646),
+    "Hillview": (1.3625, 103.7676),
+    "Beauty World": (1.3415, 103.7757),
+    "King Albert Park": (1.3353, 103.7832),
+    "Sixth Avenue": (1.3306, 103.7969),
+    "Tan Kah Kee": (1.3256, 103.8072),
+    "Stevens": (1.3199, 103.8256),
+    "Little India": (1.3066, 103.8552),
+    "Rochor": (1.3038, 103.8524),
+    "Bayfront": (1.2822, 103.8593),
+    "Downtown": (1.2796, 103.8538),
+    "Telok Ayer": (1.2824, 103.8485),
+    "Chinatown": (1.2844, 103.8437),
+    "Fort Canning": (1.2935, 103.8444),
+    "Bencoolen": (1.2988, 103.8504),
+    "Jalan Besar": (1.3055, 103.8554),
+    "Bendemeer": (1.3137, 103.8622),
+    "Geylang Bahru": (1.3213, 103.8712),
+    "Mattar": (1.3267, 103.8831),
+    "Ubi": (1.3300, 103.8996),
+    "Kaki Bukit": (1.3348, 103.9082),
+    "Bedok North": (1.3348, 103.9182),
+    "Bedok Reservoir": (1.3365, 103.9334),
+    "Tampines West": (1.3455, 103.9383),
+    "Tampines East": (1.3564, 103.9555),
+    "Upper Changi": (1.3418, 103.9612),
+    "Expo": (1.3350, 103.9614),
+    
+    # North-East Line
+    "Clarke Quay": (1.2886, 103.8467),
+    "Farrer Park": (1.3122, 103.8540),
+    "Boon Keng": (1.3193, 103.8615),
+    "Potong Pasir": (1.3315, 103.8687),
+    "Woodleigh": (1.3398, 103.8707),
+    "Kovan": (1.3605, 103.8850),
+    "Hougang": (1.3712, 103.8926),
+    "Buangkok": (1.3828, 103.8927),
+    "Sengkang": (1.3916, 103.8955),
+    "Punggol": (1.4054, 103.9022),
+    
+    # Thomson-East Coast Line
+    "Woodlands North": (1.4483, 103.7861),
+    "Woodlands South": (1.4276, 103.7943),
+    "Springleaf": (1.3977, 103.8175),
+    "Lentor": (1.3847, 103.8358),
+    "Mayflower": (1.3658, 103.8367),
+    "Bright Hill": (1.3619, 103.8328),
+    "Upper Thomson": (1.3546, 103.8341),
+    "Mount Pleasant": (1.3263, 103.8348),
+    "Napier": (1.3040, 103.8131),
+    "Orchard Boulevard": (1.3017, 103.8244),
+    "Great World": (1.2934, 103.8324),
+    "Havelock": (1.2875, 103.8351),
+    "Maxwell": (1.2805, 103.8442),
+    "Shenton Way": (1.2788, 103.8495),
+    "Marina South": (1.2711, 103.8637),
+    "Gardens by the Bay": (1.2789, 103.8649),
+    "Tanjong Rhu": (1.2934, 103.8774),
+    "Katong Park": (1.3014, 103.8866),
+    "Tanjong Katong": (1.3050, 103.8962),
+    "Marine Parade": (1.3021, 103.9058),
+    "Marine Terrace": (1.3051, 103.9153),
+    "Siglap": (1.3132, 103.9266),
+    "Bayshore": (1.3216, 103.9325),
+    "Bedok South": (1.3210, 103.9439),
+    "Sungei Bedok": (1.3239, 103.9485),
+}
 
 # Singapore MRT Stations (grouped by line for easier navigation)
 MRT_STATIONS = {
@@ -67,6 +227,39 @@ MRT_STATIONS = {
 
 # Flatten all stations into a single list (removing duplicates)
 ALL_MRT_STATIONS = sorted(list(set([station for stations in MRT_STATIONS.values() for station in stations])))
+
+def haversine_distance(lat1, lon1, lat2, lon2):
+    """
+    Calculate the great circle distance between two points 
+    on the earth (specified in decimal degrees).
+    Returns distance in kilometers.
+    """
+    # Convert decimal degrees to radians
+    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+    
+    # Haversine formula
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    c = 2 * asin(sqrt(a))
+    
+    # Radius of earth in kilometers
+    r = 6371
+    
+    return round(c * r, 1)
+
+def get_mrt_distance(station1, station2):
+    """
+    Calculate distance between two MRT stations.
+    Returns distance in km or None if station not found.
+    """
+    if station1 not in MRT_COORDINATES or station2 not in MRT_COORDINATES:
+        return None
+    
+    lat1, lon1 = MRT_COORDINATES[station1]
+    lat2, lon2 = MRT_COORDINATES[station2]
+    
+    return haversine_distance(lat1, lon1, lat2, lon2)
 
 class MRTSelectView(View):
     """Dropdown menu for selecting MRT station"""
@@ -193,1040 +386,621 @@ async def download_photo(url, user_id):
                         f.write(await resp.read())
                     
                     return filepath
-        return None
     except Exception as e:
         print(f"Error downloading photo: {e}")
-        return None
+    return None
 
-def clean_games(games_list):
-    """Clean and normalize game names"""
-    return [game.lower().strip() for game in games_list]
-
-def calculate_match_score(user1, user2):
-    """Calculate match score between two users based on games and age"""
-    # Find common games
-    common_games = set(user1.games) & set(user2.games)
-    num_common_games = len(common_games)
+def calculate_match_score(person1, person2):
+    """Calculate how well two people match based on games and location"""
+    common_games = list(set(person1.games) & set(person2.games))
+    match_score = len(common_games) * 20
     
-    # Calculate age difference
-    age_diff = abs(user1.age - user2.age)
-    
-    # Calculate score
-    game_score = num_common_games * 10
-    age_penalty = age_diff * 0.5
-    
-    total_score = game_score - age_penalty
+    # Calculate MRT distance if both have MRT locations
+    distance_km = None
+    if person1.location in MRT_COORDINATES and person2.location in MRT_COORDINATES:
+        distance_km = get_mrt_distance(person1.location, person2.location)
+        
+        # Bonus points for being closer (max 30 points)
+        if distance_km is not None:
+            if distance_km < 2:
+                match_score += 30
+            elif distance_km < 5:
+                match_score += 20
+            elif distance_km < 10:
+                match_score += 10
     
     return {
-        'score': total_score,
-        'common_games': list(common_games),
-        'num_common': num_common_games,
-        'age_diff': age_diff
+        'score': match_score,
+        'common_games': common_games,
+        'distance_km': distance_km
     }
 
 def get_connection_key(user1_id, user2_id):
-    """Create a unique key for a connection (order doesn't matter)"""
+    """Generate a consistent connection key"""
     return tuple(sorted([user1_id, user2_id]))
 
 def get_user_connections(user_id):
-    """Get all active connections for a user"""
+    """Get all connections for a user"""
     return [key for key in active_connections.keys() if user_id in key]
-
-def get_connection_count(user_id):
-    """Get number of active connections for a user"""
-    return len(get_user_connections(user_id))
-
-def can_accept_connection(user_id):
-    """Check if user can accept more connections"""
-    return get_connection_count(user_id) < MAX_CONNECTIONS
 
 def get_other_user_id(connection_key, user_id):
     """Get the other user's ID from a connection key"""
     return connection_key[0] if connection_key[1] == user_id else connection_key[1]
 
-def get_time_since_match(connection_key):
-    """Get time elapsed since match was made"""
-    if connection_key in active_connections:
-        timestamp = active_connections[connection_key]['timestamp']
-        return datetime.now() - timestamp
-    return timedelta(0)
-
-def can_make_decision(connection_key):
-    """Check if 30 minutes have passed since the match"""
-    time_elapsed = get_time_since_match(connection_key)
-    return time_elapsed >= timedelta(minutes=30)
-
-def is_connected(user1_id, user2_id):
-    """Check if two users are connected"""
-    connection_key = get_connection_key(user1_id, user2_id)
-    return connection_key in active_connections
-
-def get_connected_user_from_name(sender_id, recipient_name):
-    """Find a connected user by their Discord username or display name"""
-    user_connections = get_user_connections(sender_id)
-    
-    for connection_key in user_connections:
-        other_id = get_other_user_id(connection_key, sender_id)
-        if other_id in user_data:
-            # Check if the recipient name matches the user's profile name or game name
-            if user_data[other_id].name.lower() == recipient_name.lower():
-                return other_id
-    
-    return None
-
-class KeepOrReleaseView(View):
-    """UI for keep/release decision"""
-    def __init__(self, bot, connection_key, user_id, timeout=None):
-        super().__init__(timeout=timeout)
-        self.bot = bot
-        self.connection_key = connection_key
-        self.user_id = user_id
-    
-    @discord.ui.button(label="Keep on Team", style=discord.ButtonStyle.success, emoji="✅")
-    async def keep_button(self, interaction: discord.Interaction, button: Button):
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ This isn't your decision!", ephemeral=True)
-            return
-        
-        await handle_decision(self.bot, self.connection_key, self.user_id, "keep")
-        await interaction.response.send_message("✅ You've decided to keep this teammate!", ephemeral=True)
-        self.stop()
-    
-    @discord.ui.button(label="Let Go", style=discord.ButtonStyle.danger, emoji="👋")
-    async def release_button(self, interaction: discord.Interaction, button: Button):
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ This isn't your decision!", ephemeral=True)
-            return
-        
-        await handle_decision(self.bot, self.connection_key, self.user_id, "release")
-        await interaction.response.send_message("👋 You've decided to let this teammate go.", ephemeral=True)
-        self.stop()
-
-async def handle_decision(bot, connection_key, user_id, decision):
-    """Handle keep/release decision"""
-    if connection_key not in active_connections:
-        return
-    
-    connection_data = active_connections[connection_key]
-    other_user_id = get_other_user_id(connection_key, user_id)
-    
-    # Record decision
-    if connection_key[0] == user_id:
-        connection_data['user1_decision'] = decision
-    else:
-        connection_data['user2_decision'] = decision
-    
-    user1_decision = connection_data['user1_decision']
-    user2_decision = connection_data['user2_decision']
-    
-    # Check if both users have made decisions
-    if user1_decision and user2_decision:
-        user1_id = connection_key[0]
-        user2_id = connection_key[1]
-        
-        user1 = await bot.fetch_user(user1_id)
-        user2 = await bot.fetch_user(user2_id)
-        
-        if user1_decision == "keep" and user2_decision == "keep":
-            # Both want to keep - connection becomes permanent
-            try:
-                await user1.send(f"🎉 **Great news!** Both you and {user_data[user2_id].name} want to keep gaming together! This connection is now permanent. Use `!viewteam` to see all your teammates.")
-                await user2.send(f"🎉 **Great news!** Both you and {user_data[user1_id].name} want to keep gaming together! This connection is now permanent. Use `!viewteam` to see all your teammates.")
-            except:
-                pass
-            # Keep in active_connections but mark as permanent
-            connection_data['permanent'] = True
-            
-        elif user1_decision == "release" or user2_decision == "release":
-            # At least one wants to release - remove connection
-            try:
-                if user1_decision == "release" and user2_decision == "release":
-                    await user1.send(f"👋 You both decided to part ways with each other. You can find new matches with `!findmatch`")
-                    await user2.send(f"👋 You both decided to part ways with each other. You can find new matches with `!findmatch`")
-                elif user1_decision == "release":
-                    await user1.send(f"👋 You've let {user_data[user2_id].name} go. You can find new matches with `!findmatch`")
-                    await user2.send(f"😔 {user_data[user1_id].name} decided to let you go. You can find new matches with `!findmatch`")
-                else:
-                    await user2.send(f"👋 You've let {user_data[user1_id].name} go. You can find new matches with `!findmatch`")
-                    await user1.send(f"😔 {user_data[user2_id].name} decided to let you go. You can find new matches with `!findmatch`")
-            except:
-                pass
-            
-            # Remove connection
-            del active_connections[connection_key]
-
-async def send_match_dm(bot, user1_id, user2_id, match_data, user1_data, user2_data):
-    """Send DM to both users about their match"""
-    try:
-        user1 = await bot.fetch_user(user1_id)
-        user2 = await bot.fetch_user(user2_id)
-        
-        # Create embed for user1
-        embed1 = discord.Embed(
-            title="🎮 New Gaming Match Found!",
-            description=f"You've been matched with **{user2_data.name}** (@{user2.name})!",
-            color=discord.Color.green()
-        )
-        embed1.add_field(name="🎯 Match Score", value=f"**{match_data['score']:.1f}** points", inline=True)
-        embed1.add_field(name="🎮 Common Games", value=", ".join(match_data['common_games']), inline=False)
-        embed1.add_field(name="📍 Their Location", value=user2_data.location, inline=True)
-        embed1.add_field(name="📅 Age", value=str(user2_data.age), inline=True)
-        embed1.add_field(name="📝 Bio", value=user2_data.bio, inline=False)
-        
-        if user2_data.photo_url:
-            embed1.set_thumbnail(url=user2_data.photo_url)
-        
-        embed1.set_footer(text="⏰ In 30 minutes, you'll decide: Keep or Release this teammate!")
-        
-        # Create embed for user2
-        embed2 = discord.Embed(
-            title="🎮 New Gaming Match Found!",
-            description=f"You've been matched with **{user1_data.name}** (@{user1.name})!",
-            color=discord.Color.green()
-        )
-        embed2.add_field(name="🎯 Match Score", value=f"**{match_data['score']:.1f}** points", inline=True)
-        embed2.add_field(name="🎮 Common Games", value=", ".join(match_data['common_games']), inline=False)
-        embed2.add_field(name="📍 Their Location", value=user1_data.location, inline=True)
-        embed2.add_field(name="📅 Age", value=str(user1_data.age), inline=True)
-        embed2.add_field(name="📝 Bio", value=user1_data.bio, inline=False)
-        
-        if user1_data.photo_url:
-            embed2.set_thumbnail(url=user1_data.photo_url)
-        
-        embed2.set_footer(text="⏰ In 30 minutes, you'll decide: Keep or Release this teammate!")
-        
-        # Send DMs with smart formatting for names with spaces
-        user1_msg_cmd = f'!msg "{user2_data.name}"' if ' ' in user2_data.name else f'!msg {user2_data.name}'
-        user1_dm_cmd = f'!dm "{user2.name}"' if ' ' in user2.name else f'!dm {user2.name}'
-        
-        user2_msg_cmd = f'!msg "{user1_data.name}"' if ' ' in user1_data.name else f'!msg {user1_data.name}'
-        user2_dm_cmd = f'!dm "{user1.name}"' if ' ' in user1.name else f'!dm {user1.name}'
-        
-        await user1.send(embed=embed1)
-        await user1.send(f"💬 **Send messages to {user2_data.name}:**\nUse `{user1_msg_cmd} Your message here`\nOr use `{user1_dm_cmd} Your message here`")
-        
-        await user2.send(embed=embed2)
-        await user2.send(f"💬 **Send messages to {user1_data.name}:**\nUse `{user2_msg_cmd} Your message here`\nOr use `{user2_dm_cmd} Your message here`")
-        
-        return True
-    except discord.Forbidden:
-        print(f"Cannot send DM to user - they may have DMs disabled")
-        return False
-    except Exception as e:
-        print(f"Error sending match DM: {e}")
-        return False
-
-async def send_decision_prompt(bot, connection_key):
-    """Send decision prompt after 30 minutes"""
-    if connection_key not in active_connections:
-        return
-    
-    connection_data = active_connections[connection_key]
-    
-    # Skip if already permanent
-    if connection_data.get('permanent'):
-        return
-    
-    user1_id = connection_key[0]
-    user2_id = connection_key[1]
-    
-    try:
-        user1 = await bot.fetch_user(user1_id)
-        user2 = await bot.fetch_user(user2_id)
-        
-        user1_data = user_data.get(user1_id)
-        user2_data = user_data.get(user2_id)
-        
-        if not user1_data or not user2_data:
-            return
-        
-        # Send decision UI to user1
-        embed1 = discord.Embed(
-            title="⏰ Decision Time!",
-            description=f"30 minutes have passed! What do you think of **{user2_data.name}**?",
-            color=discord.Color.gold()
-        )
-        embed1.add_field(
-            name="Keep on Team ✅",
-            value="You enjoyed gaming together and want to keep this connection",
-            inline=False
-        )
-        embed1.add_field(
-            name="Let Go 👋",
-            value="Not the right fit - find a new match",
-            inline=False
-        )
-        
-        view1 = KeepOrReleaseView(bot, connection_key, user1_id)
-        await user1.send(embed=embed1, view=view1)
-        
-        # Send decision UI to user2
-        embed2 = discord.Embed(
-            title="⏰ Decision Time!",
-            description=f"30 minutes have passed! What do you think of **{user1_data.name}**?",
-            color=discord.Color.gold()
-        )
-        embed2.add_field(
-            name="Keep on Team ✅",
-            value="You enjoyed gaming together and want to keep this connection",
-            inline=False
-        )
-        embed2.add_field(
-            name="Let Go 👋",
-            value="Not the right fit - find a new match",
-            inline=False
-        )
-        
-        view2 = KeepOrReleaseView(bot, connection_key, user2_id)
-        await user2.send(embed=embed2, view=view2)
-        
-    except Exception as e:
-        print(f"Error sending decision prompt: {e}")
-
 def main():
     load_dotenv()
-
+    
     intents = discord.Intents.default()
     intents.message_content = True
-    intents.members = True  # Enable member intents for better user lookups
-    bot = commands.Bot(command_prefix="!", intents=intents)
+    intents.members = True
     
-    # Background task for decision prompts
+    bot = commands.Bot(command_prefix='!', intents=intents)
+    
     @bot.event
     async def on_ready():
         print(f'{bot.user} has connected to Discord!')
-        print(f'Bot is ready to match gamers!')
-        bot.loop.create_task(check_decision_times())
-    
-    # Handle DM messages for relay
-    @bot.event
-    async def on_message(message):
-        # Ignore messages from the bot itself
-        if message.author == bot.user:
-            return
-        
-        # Process commands first
-        await bot.process_commands(message)
-        
-        # Check if it's a DM (not in a guild/server)
-        if message.guild is None and not message.content.startswith('!'):
-            sender_id = message.author.id
-            
-            # Check if sender has a profile
-            if sender_id not in user_data:
-                return
-            
-            # Get all connections for this user
-            user_connections = get_user_connections(sender_id)
-            
-            if not user_connections:
-                await message.channel.send("❌ You're not connected with anyone yet! Use `!findmatch` to find teammates.")
-                return
-            
-            # If user has only one connection, auto-send to them
-            if len(user_connections) == 1:
-                connection_key = user_connections[0]
-                recipient_id = get_other_user_id(connection_key, sender_id)
-                
-                try:
-                    recipient = await bot.fetch_user(recipient_id)
-                    sender_name = user_data[sender_id].name
-                    
-                    # Create message embed
-                    embed = discord.Embed(
-                        description=message.content,
-                        color=discord.Color.blue(),
-                        timestamp=datetime.utcnow()
-                    )
-                    embed.set_author(name=f"Message from {sender_name}", icon_url=message.author.display_avatar.url)
-                    embed.set_footer(text="Reply directly or use !msg to respond")
-                    
-                    # Forward attachments if any
-                    if message.attachments:
-                        for attachment in message.attachments:
-                            embed.add_field(name="📎 Attachment", value=f"[{attachment.filename}]({attachment.url})", inline=False)
-                    
-                    await recipient.send(embed=embed)
-                    await message.add_reaction("✅")  # Confirm message sent
-                    
-                except Exception as e:
-                    await message.channel.send(f"❌ Failed to send message: {e}")
-            
-            else:
-                # Multiple connections - ask user to specify recipient
-                await message.channel.send(
-                    "❓ You have multiple connections. Please use:\n"
-                    "`!msg <name> <message>` - Send to specific teammate\n"
-                    "`!dm @username <message>` - Send using Discord username"
-                )
-    
-    async def check_decision_times():
-        """Background task to check if connections are ready for decisions"""
-        await bot.wait_until_ready()
-        while not bot.is_closed():
-            current_time = datetime.now()
-            connections_to_check = list(active_connections.items())
-            
-            for connection_key, connection_data in connections_to_check:
-                # Skip if permanent or already has decisions
-                if connection_data.get('permanent'):
-                    continue
-                if connection_data.get('user1_decision') or connection_data.get('user2_decision'):
-                    continue
-                
-                # Check if 30 minutes have passed
-                time_elapsed = current_time - connection_data['timestamp']
-                if time_elapsed >= timedelta(minutes=30) and not connection_data.get('prompt_sent'):
-                    await send_decision_prompt(bot, connection_key)
-                    connection_data['prompt_sent'] = True
-            
-            await asyncio.sleep(60)  # Check every minute
-    
+        print(f'Bot is in {len(bot.guilds)} server(s)')
+
     @bot.command()
     async def setup(ctx):
-        """Interactive profile setup"""
+        """Create a gaming profile"""
+        user_id = ctx.author.id
+        
+        if user_id in user_data:
+            await ctx.send("❌ You already have a profile! Use `!update` to modify it or `!delete` to start over.")
+            return
+        
+        def check(m):
+            return m.author == ctx.author and m.channel == ctx.channel
+        
         try:
-            user_id = ctx.author.id
+            # Step 1: Name
+            await ctx.send("🎮 **Let's set up your gaming profile!**\n\n**Step 1/5:** What's your name?")
+            name_msg = await bot.wait_for('message', check=check, timeout=60.0)
+            name = name_msg.content.strip()
             
-            if user_id in user_data:
-                await ctx.send("⚠️ You already have a profile! Use `!update` to change it or `!delete` to remove it.")
-                return
-            
-            await ctx.send("🎮 **Let's set up your gaming profile!**\n")
-            
-            await ctx.send("**What is your name?**")
-            msg = await bot.wait_for('message', check=lambda m: m.author == ctx.author, timeout=60.0)
-            name = msg.content
-            
-            await ctx.send("**What is your age?**")
-            msg = await bot.wait_for('message', check=lambda m: m.author == ctx.author, timeout=60.0)
+            # Step 2: Age
+            await ctx.send(f"**Step 2/5:** How old are you, {name}? (Enter a number)")
+            age_msg = await bot.wait_for('message', check=check, timeout=60.0)
             try:
-                age = int(msg.content)
+                age = int(age_msg.content.strip())
+                if age < 13 or age > 100:
+                    await ctx.send("❌ Please enter a valid age between 13 and 100.")
+                    return
             except ValueError:
-                await ctx.send("❌ Invalid age. Please use `!setup` to try again.")
+                await ctx.send("❌ Please enter a valid number for age.")
                 return
             
-            await ctx.send("**What games do you play?** (separate with commas)\nExample: Valorant, League of Legends, Minecraft")
-            msg = await bot.wait_for('message', check=lambda m: m.author == ctx.author, timeout=60.0)
-            games = clean_games(msg.content.split(","))
+            # Step 3: Games
+            await ctx.send(
+                "**Step 3/5:** What games do you play?\n"
+                "Please enter them separated by commas (e.g., `Valorant, League of Legends, Minecraft`)"
+            )
+            games_msg = await bot.wait_for('message', check=check, timeout=60.0)
+            games = [game.strip() for game in games_msg.content.split(',')]
             
-            # MRT Station Selection with dropdown
-            await ctx.send("🚇 **Select your nearest MRT station:**")
-            mrt_view = MRTSelectView(user_id, bot)
-            mrt_message = await ctx.send("Use the dropdown menus below:", view=mrt_view)
+            # Step 4: MRT Location
+            await ctx.send("**Step 4/5:** Select your nearest MRT station from the dropdown below:")
             
-            # Wait for selection
-            await mrt_view.wait()
+            view = MRTSelectView(user_id, bot)
+            location_msg = await ctx.send("Choose your MRT station:", view=view)
             
-            if mrt_view.selected_station:
-                location = f"{mrt_view.selected_station} MRT, Singapore"
-                await ctx.send(f"📍 Location set to: **{location}**")
-            else:
-                await ctx.send("⏱️ MRT selection timed out. Using default location.")
-                location = "Singapore"
+            await view.wait()
             
-            await ctx.send("**Write something about yourself:**")
-            msg = await bot.wait_for('message', check=lambda m: m.author == ctx.author, timeout=60.0)
-            bio = msg.content
+            if view.selected_station is None:
+                await ctx.send("❌ Setup timed out. Please try again with `!setup`")
+                return
             
-            await ctx.send("**Upload a profile photo!** (attach an image or type 'skip')")
-            msg = await bot.wait_for('message', check=lambda m: m.author == ctx.author, timeout=120.0)
+            location = view.selected_station
+            
+            # Step 5: Bio
+            await ctx.send(
+                "**Step 5/5:** Tell us a bit about yourself!\n"
+                "What's your gaming style, when do you play, or anything else you'd like to share?"
+            )
+            bio_msg = await bot.wait_for('message', check=check, timeout=120.0)
+            bio = bio_msg.content.strip()
+            
+            # Optional: Photo
+            await ctx.send(
+                "**Optional:** Want to add a profile photo? Upload an image now or type `skip`.\n"
+                "(You can use your Discord avatar or upload a custom image)"
+            )
             
             photo_url = None
-            if msg.attachments:
-                attachment = msg.attachments[0]
-                if attachment.content_type and attachment.content_type.startswith('image/'):
-                    saved_path = await download_photo(attachment.url, ctx.author.id)
-                    if saved_path:
-                        photo_url = attachment.url
-                        await ctx.send("✅ Photo uploaded successfully!")
-                    else:
-                        await ctx.send("⚠️ Failed to save photo, continuing without it.")
-                else:
-                    await ctx.send("⚠️ That's not an image! Continuing without photo.")
-            elif msg.content.lower() != 'skip':
-                await ctx.send("⚠️ No image detected. Continuing without photo.")
+            photo_response = await bot.wait_for('message', check=check, timeout=60.0)
             
-            person = Person(name=name, age=age, games=games, location=location, bio=bio, photo_url=photo_url)
+            if photo_response.content.lower() != 'skip':
+                if photo_response.attachments:
+                    photo_url = photo_response.attachments[0].url
+                    await download_photo(photo_url, user_id)
+                elif ctx.author.avatar:
+                    photo_url = ctx.author.avatar.url
+                    await download_photo(photo_url, user_id)
+            elif ctx.author.avatar:
+                photo_url = ctx.author.avatar.url
+                await download_photo(photo_url, user_id)
+            
+            # Create person object
+            person = Person(name, age, games, location, bio, photo_url)
             user_data[user_id] = person
             
-            embed = discord.Embed(title=f"✅ {person.name}'s Profile Created!", color=discord.Color.green())
-            embed.add_field(name="Age", value=str(person.age), inline=True)
-            embed.add_field(name="Location", value=person.location, inline=True)
-            embed.add_field(name="Games", value=", ".join(person.games), inline=False)
-            embed.add_field(name="Bio", value=person.bio, inline=False)
+            # Create confirmation embed
+            embed = discord.Embed(
+                title="✅ Profile Created Successfully!",
+                description=f"Welcome to the gaming community, {name}!",
+                color=discord.Color.green()
+            )
+            embed.add_field(name="Name", value=name, inline=True)
+            embed.add_field(name="Age", value=str(age), inline=True)
+            embed.add_field(name="Games", value=", ".join(games), inline=False)
+            embed.add_field(name="📍 Nearest MRT", value=location, inline=True)
+            embed.add_field(name="Bio", value=bio, inline=False)
             
-            if person.photo_url:
-                embed.set_thumbnail(url=person.photo_url)
+            if photo_url:
+                embed.set_thumbnail(url=photo_url)
+            
+            embed.set_footer(text="Use !findmatch to find gaming buddies!")
             
             await ctx.send(embed=embed)
-            await ctx.send("💡 **Use `!findmatch` to find gaming buddies!**")
             
         except asyncio.TimeoutError:
-            await ctx.send("⏱️ Setup timed out. Please use `!setup` to try again.")
-        except Exception as e:
-            await ctx.send(f"❌ An error occurred: {e}")
-    
+            await ctx.send("❌ Setup timed out. Please try again with `!setup`")
+
     @bot.command()
     async def profile(ctx, member: discord.Member = None):
         """View a user's profile"""
-        if member is None:
-            member = ctx.author
+        target = member or ctx.author
+        user_id = target.id
         
-        person = user_data.get(member.id)
-        if person is None:
-            await ctx.send(f"❌ No profile found for {member.display_name}. Use `!setup` to create one!")
+        if user_id not in user_data:
+            if member:
+                await ctx.send(f"❌ {member.display_name} doesn't have a profile yet!")
+            else:
+                await ctx.send("❌ You don't have a profile! Create one with `!setup`")
             return
         
-        embed = discord.Embed(title=f"👤 {person.name}'s Profile", color=discord.Color.blue())
+        person = user_data[user_id]
+        
+        embed = discord.Embed(
+            title=f"🎮 {person.name}'s Gaming Profile",
+            color=discord.Color.blue()
+        )
+        embed.add_field(name="Name", value=person.name, inline=True)
         embed.add_field(name="Age", value=str(person.age), inline=True)
-        embed.add_field(name="Location", value=person.location, inline=True)
-        embed.add_field(name="Games", value=", ".join(person.games), inline=False)
+        embed.add_field(name="Games", value=", ".join(person.games) if person.games else "None", inline=False)
+        embed.add_field(name="📍 Nearest MRT", value=person.location, inline=True)
         embed.add_field(name="Bio", value=person.bio, inline=False)
-        embed.set_footer(text=f"Discord: {member.display_name}")
         
         if person.photo_url:
             embed.set_thumbnail(url=person.photo_url)
         
+        # Show connections count
+        connections = get_user_connections(user_id)
+        permanent_count = sum(1 for key in connections if active_connections[key].get('permanent', False))
+        embed.set_footer(text=f"Permanent Teammates: {permanent_count}/{MAX_CONNECTIONS}")
+        
         await ctx.send(embed=embed)
-    
+
     @bot.command()
     async def findmatch(ctx):
-        """Find your best gaming matches"""
+        """Find best gaming matches"""
         user_id = ctx.author.id
         
         if user_id not in user_data:
             await ctx.send("❌ You need to create a profile first! Use `!setup`")
             return
         
-        # Check connection limit
-        connection_count = get_connection_count(user_id)
-        if connection_count >= MAX_CONNECTIONS:
-            await ctx.send(f"⚠️ **You've reached the maximum of {MAX_CONNECTIONS} active connections!**\nUse `!viewteam` to see your current team, or wait for the 30-minute decision period to free up slots.")
+        current_person = user_data[user_id]
+        user_connections = get_user_connections(user_id)
+        permanent_connections = [key for key in user_connections if active_connections[key].get('permanent', False)]
+        
+        if len(permanent_connections) >= MAX_CONNECTIONS:
+            await ctx.send(f"❌ You've reached the maximum of {MAX_CONNECTIONS} permanent teammates!\nUse `!removemember @user` to make space.")
             return
         
-        current_user = user_data[user_id]
+        # Find potential matches (excluding self and existing connections)
         matches = []
-        
-        # Get already connected user IDs
-        connected_user_ids = set()
-        for connection in get_user_connections(user_id):
-            connected_user_ids.add(get_other_user_id(connection, user_id))
-        
-        # Compare with all other users (excluding already connected)
         for other_id, other_person in user_data.items():
-            if other_id == user_id or other_id in connected_user_ids:
+            if other_id == user_id:
                 continue
             
-            # Skip if other user is at max connections
-            if not can_accept_connection(other_id):
+            connection_key = get_connection_key(user_id, other_id)
+            if connection_key in active_connections:
                 continue
             
-            match_data = calculate_match_score(current_user, other_person)
-            
-            if match_data['num_common'] > 0:
-                matches.append({'user_id': other_id, 'person': other_person, 'match_data': match_data})
+            match_data = calculate_match_score(current_person, other_person)
+            if match_data['score'] > 0:
+                matches.append((other_id, match_data))
         
         if not matches:
-            await ctx.send("😔 **No new matches available!**\nEither everyone is at max connections or you're already connected with all compatible players.")
+            await ctx.send("😔 No matches found! Try updating your profile or check back later.")
             return
         
-        matches.sort(key=lambda x: x['match_data']['score'], reverse=True)
+        # Sort by match score
+        matches.sort(key=lambda x: x[1]['score'], reverse=True)
+        top_matches = matches[:5]
         
         embed = discord.Embed(
-            title=f"🎮 Top Gaming Matches for {current_user.name}",
-            description=f"Found {len(matches)} potential gaming buddies!\n**Connections: {connection_count}/{MAX_CONNECTIONS}**",
+            title="🎯 Your Top Gaming Matches",
+            description=f"Found {len(matches)} potential teammates!",
             color=discord.Color.gold()
         )
         
-        for i, match in enumerate(matches[:5], 1):
-            other_id = match['user_id']
-            person = match['person']
-            match_data = match['match_data']
-            
-            try:
-                member = await bot.fetch_user(other_id)
-                discord_name = f"@{member.name}"
-            except:
-                discord_name = "Unknown User"
-            
-            match_info = (
-                f"**{discord_name}**\n"
-                f"🎯 Match Score: **{match_data['score']:.1f}**\n"
-                f"🎮 Common Games ({match_data['num_common']}): {', '.join(match_data['common_games'])}\n"
-                f"📅 Age Difference: {match_data['age_diff']} years\n"
-                f"📍 Location: {person.location}\n"
-            )
-            
-            if i == 1:
-                title = "🥇 Best Match - " + person.name
-            elif i == 2:
-                title = "🥈 2nd Match - " + person.name
-            elif i == 3:
-                title = "🥉 3rd Match - " + person.name
-            else:
-                title = f"#{i} - {person.name}"
-            
-            embed.add_field(name=title, value=match_info, inline=False)
-        
-        if matches[0]['person'].photo_url:
-            embed.set_thumbnail(url=matches[0]['person'].photo_url)
-        
-        embed.set_footer(text=f"Use !connect @username to start chatting!")
-        
-        await ctx.send(embed=embed)
-    
-    @bot.command()
-    async def connect(ctx, member: discord.Member):
-        """Connect with a match"""
-        user_id = ctx.author.id
-        
-        if user_id not in user_data:
-            await ctx.send("❌ You need to create a profile first! Use `!setup`")
-            return
-        
-        if member.id not in user_data:
-            await ctx.send(f"❌ {member.display_name} doesn't have a profile yet!")
-            return
-        
-        if member.id == user_id:
-            await ctx.send("❌ You can't connect with yourself!")
-            return
-        
-        # Check connection limits
-        if not can_accept_connection(user_id):
-            await ctx.send(f"❌ You've reached the maximum of {MAX_CONNECTIONS} active connections!")
-            return
-        
-        if not can_accept_connection(member.id):
-            await ctx.send(f"❌ {member.display_name} has reached their maximum connections!")
-            return
-        
-        connection_key = get_connection_key(user_id, member.id)
-        if connection_key in active_connections:
-            await ctx.send(f"⚠️ You're already connected with {member.display_name}!")
-            return
-        
-        user1_data = user_data[user_id]
-        user2_data = user_data[member.id]
-        
-        match_data = calculate_match_score(user1_data, user2_data)
-        
-        if match_data['num_common'] == 0:
-            await ctx.send(f"⚠️ You have no common games with {member.display_name}.")
-            return
-        
-        await ctx.send(f"✅ Creating connection with {member.display_name}... Check your DMs! 📬")
-        
-        success = await send_match_dm(bot, user_id, member.id, match_data, user1_data, user2_data)
-        
-        if success:
-            # Create new connection
-            active_connections[connection_key] = {
-                'timestamp': datetime.now(),
-                'user1_decision': None,
-                'user2_decision': None,
-                'prompt_sent': False
-            }
-            
-            await ctx.send(f"🎉 **Connection established!** You have 30 minutes to chat before making a decision.\n**Your connections: {get_connection_count(user_id)}/{MAX_CONNECTIONS}**")
-        else:
-            await ctx.send(f"⚠️ Couldn't send DM. Make sure both of you have DMs enabled!")
-    
-    @bot.command()
-    async def msg(ctx, *, full_message: str):
-        """Send a message to a connected teammate using their profile name
-        Usage: !msg John Hey, want to play Valorant?
-        Or for names with spaces: !msg "John Doe" Hey there!"""
-        sender_id = ctx.author.id
-        
-        if sender_id not in user_data:
-            await ctx.send("❌ You need to create a profile first! Use `!setup`")
-            return
-        
-        # Parse the message - handle both quoted and unquoted names
-        recipient_name = None
-        message = None
-        
-        # Check if starts with a quote (for names with spaces)
-        if full_message.startswith('"'):
-            # Find the closing quote
-            end_quote = full_message.find('"', 1)
-            if end_quote != -1:
-                recipient_name = full_message[1:end_quote]
-                message = full_message[end_quote+1:].strip()
-            else:
-                await ctx.send("❌ Missing closing quote for name!")
-                return
-        else:
-            # No quotes - take first word as name
-            parts = full_message.split(None, 1)
-            if len(parts) < 2:
-                await ctx.send("❌ Usage: `!msg <name> <message>` or `!msg \"Name With Spaces\" <message>`")
-                return
-            recipient_name = parts[0]
-            message = parts[1]
-        
-        if not message:
-            await ctx.send("❌ You need to include a message!")
-            return
-        
-        # Find the recipient among connections
-        recipient_id = None
-        user_connections = get_user_connections(sender_id)
-        
-        for connection_key in user_connections:
-            other_id = get_other_user_id(connection_key, sender_id)
-            if other_id in user_data:
-                if user_data[other_id].name.lower() == recipient_name.lower():
-                    recipient_id = other_id
-                    break
-        
-        if not recipient_id:
-            await ctx.send(f"❌ You're not connected with anyone named '{recipient_name}'.\nUse `!viewteam` to see your connections.")
-            return
-        
-        try:
-            recipient = await bot.fetch_user(recipient_id)
-            sender_name = user_data[sender_id].name
-            
-            # Create message embed
-            embed = discord.Embed(
-                description=message,
-                color=discord.Color.blue(),
-                timestamp=datetime.utcnow()
-            )
-            embed.set_author(name=f"Message from {sender_name}", icon_url=ctx.author.display_avatar.url)
-            
-            # Smart footer - add quotes if sender name has spaces
-            if ' ' in sender_name:
-                embed.set_footer(text=f"Reply with: !msg \"{sender_name}\" <your message>")
-            else:
-                embed.set_footer(text=f"Reply with: !msg {sender_name} <your message>")
-            
-            await recipient.send(embed=embed)
-            await ctx.send(f"✅ Message sent to {user_data[recipient_id].name}!")
-            
-        except Exception as e:
-            await ctx.send(f"❌ Failed to send message: {e}")
-    
-    @bot.command()
-    async def dm(ctx, *, full_message: str):
-        """Send a message to a connected teammate using their Discord username
-        Usage: !dm username Hey, want to play?
-        Or for names with spaces: !dm "user name" Hey there!"""
-        sender_id = ctx.author.id
-        
-        if sender_id not in user_data:
-            await ctx.send("❌ You need to create a profile first! Use `!setup`")
-            return
-        
-        # Parse the message - handle both quoted and unquoted names
-        recipient_name = None
-        message = None
-        
-        # Check if starts with a quote (for names with spaces)
-        if full_message.startswith('"'):
-            # Find the closing quote
-            end_quote = full_message.find('"', 1)
-            if end_quote != -1:
-                recipient_name = full_message[1:end_quote]
-                message = full_message[end_quote+1:].strip()
-            else:
-                await ctx.send("❌ Missing closing quote for name!")
-                return
-        else:
-            # No quotes - take first word as name
-            parts = full_message.split(None, 1)
-            if len(parts) < 2:
-                await ctx.send("❌ Usage: `!dm username <message>` or `!dm \"user name\" <message>`")
-                return
-            recipient_name = parts[0]
-            message = parts[1]
-        
-        if not message:
-            await ctx.send("❌ You need to include a message!")
-            return
-        
-        # Find the member by Discord username among connections
-        recipient_id = None
-        user_connections = get_user_connections(sender_id)
-        
-        for connection_key in user_connections:
-            other_id = get_other_user_id(connection_key, sender_id)
-            if other_id in user_data:
-                try:
-                    member = await bot.fetch_user(other_id)
-                    # Check both username and display name
-                    if member.name.lower() == recipient_name.lower() or member.display_name.lower() == recipient_name.lower():
-                        recipient_id = other_id
-                        break
-                except:
-                    continue
-        
-        if not recipient_id:
-            await ctx.send(f"❌ You're not connected with Discord user '{recipient_name}'.\nUse `!viewteam` to see your connections.")
-            return
-        
-        try:
-            member = await bot.fetch_user(recipient_id)
-            sender_name = user_data[sender_id].name
-            sender_discord = ctx.author.name
-            
-            # Create message embed
-            embed = discord.Embed(
-                description=message,
-                color=discord.Color.blue(),
-                timestamp=datetime.utcnow()
-            )
-            embed.set_author(name=f"Message from {sender_name}", icon_url=ctx.author.display_avatar.url)
-            
-            # Smart footer - add quotes if sender Discord name has spaces
-            if ' ' in sender_discord:
-                embed.set_footer(text=f"Reply with: !dm \"{sender_discord}\" <your message>")
-            else:
-                embed.set_footer(text=f"Reply with: !dm {sender_discord} <your message>")
-            
-            await member.send(embed=embed)
-            await ctx.send(f"✅ Message sent to {user_data[recipient_id].name}!")
-            
-        except discord.Forbidden:
-            await ctx.send(f"❌ Cannot send DM to {recipient_name}. They may have DMs disabled.")
-        except Exception as e:
-            await ctx.send(f"❌ Failed to send message: {e}")
-    
-    @bot.command()
-    async def viewteam(ctx):
-        """View your current active connections with detailed UI"""
-        user_id = ctx.author.id
-        
-        if user_id not in user_data:
-            await ctx.send("❌ You need to create a profile first! Use `!setup`")
-            return
-        
-        user_connections = get_user_connections(user_id)
-        
-        if not user_connections:
-            await ctx.send("📭 You have no active connections yet! Use `!findmatch` to find matches.")
-            return
-        
-        embed = discord.Embed(
-            title=f"🤝 Your Gaming Team",
-            description=f"**Active Connections: {len(user_connections)}/{MAX_CONNECTIONS}**",
-            color=discord.Color.blue()
-        )
-        
-        for connection_key in user_connections:
-            other_id = get_other_user_id(connection_key, user_id)
-            
-            if other_id not in user_data:
-                continue
-            
+        for other_id, match_data in top_matches:
             other_person = user_data[other_id]
-            connection_data = active_connections[connection_key]
-            
-            time_elapsed = get_time_since_match(connection_key)
-            is_permanent = connection_data.get('permanent', False)
-            
-            # Get decision status
-            if connection_key[0] == user_id:
-                my_decision = connection_data.get('user1_decision')
-                their_decision = connection_data.get('user2_decision')
-            else:
-                my_decision = connection_data.get('user2_decision')
-                their_decision = connection_data.get('user1_decision')
             
             try:
                 member = await bot.fetch_user(other_id)
                 
-                # Build status text
-                if is_permanent:
-                    status = "✅ **Permanent Teammate**"
-                elif time_elapsed < timedelta(minutes=30):
-                    time_remaining = timedelta(minutes=30) - time_elapsed
-                    minutes_left = int(time_remaining.total_seconds() / 60)
-                    status = f"⏰ Decision in **{minutes_left} minutes**"
-                else:
-                    if my_decision and their_decision:
-                        status = f"✅ Both decided: {my_decision.title()}"
-                    elif my_decision:
-                        status = f"⏳ You: {my_decision.title()} | Them: Pending"
-                    elif their_decision:
-                        status = f"⏳ You: Pending | Them: Decided"
-                    else:
-                        status = "⚠️ **Decision time! Check DMs**"
-                
-                # Smart formatting for names with spaces
-                msg_cmd = f'!msg "{other_person.name}"' if ' ' in other_person.name else f'!msg {other_person.name}'
-                
+                # Build match field value with distance
                 field_value = (
                     f"@{member.name}\n"
-                    f"🎮 Common Games: {', '.join(calculate_match_score(user_data[user_id], other_person)['common_games'][:3])}\n"
-                    f"📍 {other_person.location}\n"
-                    f"{status}\n"
-                    f"💬 Message: `{msg_cmd} <text>`"
+                    f"Match Score: {match_data['score']}%\n"
+                    f"🎮 Common Games: {', '.join(match_data['common_games'])}\n"
+                    f"📍 {other_person.location}"
                 )
                 
+                # Add distance if available
+                if match_data['distance_km'] is not None:
+                    field_value += f" ({match_data['distance_km']} km away)"
+                
+                field_value += f"\n📝 {other_person.bio[:80]}..." if len(other_person.bio) > 80 else f"\n📝 {other_person.bio}"
+                
                 embed.add_field(
-                    name=f"{'⭐' if is_permanent else '🎮'} {other_person.name}",
+                    name=f"⭐ {other_person.name}",
                     value=field_value,
                     inline=False
                 )
             except:
                 pass
         
-        embed.set_footer(text="Use !makedecision to keep or release teammates after 30 minutes")
-        
+        embed.set_footer(text="Use !connect @user to team up with a match!")
         await ctx.send(embed=embed)
-    
+
     @bot.command()
-    async def makedecision(ctx, member: discord.Member, decision: str):
-        """Manually make a keep/release decision - !makedecision @user keep/release"""
+    async def connect(ctx, member: discord.Member):
+        """Connect with a matched user"""
         user_id = ctx.author.id
+        other_id = member.id
         
-        if user_id not in user_data or member.id not in user_data:
-            await ctx.send("❌ Both users need profiles!")
+        if user_id not in user_data or other_id not in user_data:
+            await ctx.send("❌ Both users need profiles to connect!")
             return
         
-        connection_key = get_connection_key(user_id, member.id)
+        if user_id == other_id:
+            await ctx.send("❌ You can't connect with yourself!")
+            return
+        
+        user_connections = get_user_connections(user_id)
+        other_connections = get_user_connections(other_id)
+        
+        permanent_user = [key for key in user_connections if active_connections[key].get('permanent', False)]
+        permanent_other = [key for key in other_connections if active_connections[key].get('permanent', False)]
+        
+        if len(permanent_user) >= MAX_CONNECTIONS:
+            await ctx.send(f"❌ You've reached the maximum of {MAX_CONNECTIONS} permanent teammates!")
+            return
+        
+        if len(permanent_other) >= MAX_CONNECTIONS:
+            await ctx.send(f"❌ {member.display_name} has reached their maximum teammates!")
+            return
+        
+        connection_key = get_connection_key(user_id, other_id)
+        
+        if connection_key in active_connections:
+            await ctx.send(f"❌ You're already connected with {member.display_name}!")
+            return
+        
+        # Create trial connection
+        active_connections[connection_key] = {
+            'timestamp': datetime.now(),
+            'user1_decision': None,
+            'user2_decision': None,
+            'permanent': False
+        }
+        
+        # Calculate match info including distance
+        match_data = calculate_match_score(user_data[user_id], user_data[other_id])
+        
+        # Notify both users
+        embed = discord.Embed(
+            title="🎉 New Connection!",
+            description=f"{ctx.author.mention} and {member.mention} are now connected!",
+            color=discord.Color.green()
+        )
+        embed.add_field(
+            name="Trial Period",
+            value="You have 30 minutes to chat. After that, use `!makedecision @user keep` to make this permanent!",
+            inline=False
+        )
+        embed.add_field(name="Match Score", value=f"{match_data['score']}%", inline=True)
+        embed.add_field(name="Common Games", value=", ".join(match_data['common_games']), inline=True)
+        
+        # Add distance info
+        if match_data['distance_km'] is not None:
+            embed.add_field(
+                name="📍 Distance", 
+                value=f"{match_data['distance_km']} km between {user_data[user_id].location} and {user_data[other_id].location}",
+                inline=False
+            )
+        
+        embed.set_footer(text="Start chatting with !msg or send a DM to the bot!")
+        
+        await ctx.send(embed=embed)
+        
+        # Send DMs to both users
+        try:
+            await ctx.author.send(f"✅ You're now connected with {user_data[other_id].name}! Send messages using `!msg {user_data[other_id].name} <message>`")
+        except:
+            pass
+        
+        try:
+            await member.send(f"✅ You're now connected with {user_data[user_id].name}! Send messages using `!msg {user_data[user_id].name} <message>`")
+        except:
+            pass
+
+    @bot.command()
+    async def makedecision(ctx, member: discord.Member, decision: str):
+        """Decide to keep or release a teammate after trial period"""
+        user_id = ctx.author.id
+        other_id = member.id
+        
+        if user_id not in user_data or other_id not in user_data:
+            await ctx.send("❌ Invalid connection!")
+            return
+        
+        connection_key = get_connection_key(user_id, other_id)
         
         if connection_key not in active_connections:
             await ctx.send(f"❌ You're not connected with {member.display_name}!")
             return
         
-        if not can_make_decision(connection_key):
-            time_remaining = timedelta(minutes=30) - get_time_since_match(connection_key)
-            minutes_left = int(time_remaining.total_seconds() / 60)
-            await ctx.send(f"⏰ You can make a decision in **{minutes_left} minutes**!")
+        connection = active_connections[connection_key]
+        
+        if connection.get('permanent', False):
+            await ctx.send("✅ This connection is already permanent!")
+            return
+        
+        # Check if 30 minutes have passed
+        time_elapsed = datetime.now() - connection['timestamp']
+        if time_elapsed < timedelta(minutes=30):
+            remaining = timedelta(minutes=30) - time_elapsed
+            minutes_left = int(remaining.total_seconds() / 60)
+            await ctx.send(f"⏰ Trial period not over yet! {minutes_left} minutes remaining.")
             return
         
         decision = decision.lower()
         if decision not in ['keep', 'release']:
-            await ctx.send("❌ Invalid decision! Use `keep` or `release`")
+            await ctx.send("❌ Decision must be either `keep` or `release`")
             return
         
-        await handle_decision(bot, connection_key, user_id, decision)
-        
-        if decision == "keep":
-            await ctx.send(f"✅ You've decided to keep {member.display_name} on your team!")
+        # Determine which user is making the decision
+        if user_id == connection_key[0]:
+            connection['user1_decision'] = decision
         else:
-            await ctx.send(f"👋 You've decided to let {member.display_name} go.")
-    
+            connection['user2_decision'] = decision
+        
+        # Check if both users have decided
+        if connection['user1_decision'] and connection['user2_decision']:
+            if connection['user1_decision'] == 'keep' and connection['user2_decision'] == 'keep':
+                connection['permanent'] = True
+                await ctx.send(f"⭐ **Connection is now permanent!** You and {member.display_name} are now permanent teammates!")
+                
+                # Notify the other user
+                try:
+                    await member.send(f"⭐ Your connection with {user_data[user_id].name} is now permanent!")
+                except:
+                    pass
+            else:
+                # Remove connection
+                del active_connections[connection_key]
+                await ctx.send(f"👋 Connection with {member.display_name} has been released.")
+                
+                try:
+                    await member.send(f"👋 Your connection with {user_data[user_id].name} has been released.")
+                except:
+                    pass
+        else:
+            await ctx.send(f"✅ Your decision has been recorded. Waiting for {member.display_name}'s decision...")
+            
+            try:
+                await member.send(f"⏰ {user_data[user_id].name} has made their decision. Use `!makedecision @{ctx.author.name} keep/release` to decide!")
+            except:
+                pass
+
     @bot.command()
-    async def delete(ctx):
-        """Delete your profile"""
+    async def removemember(ctx, member: discord.Member):
+        """Remove a permanent teammate"""
+        user_id = ctx.author.id
+        other_id = member.id
+        
+        connection_key = get_connection_key(user_id, other_id)
+        
+        if connection_key not in active_connections:
+            await ctx.send(f"❌ You're not connected with {member.display_name}!")
+            return
+        
+        if not active_connections[connection_key].get('permanent', False):
+            await ctx.send("❌ This is a trial connection! Use `!makedecision` instead.")
+            return
+        
+        # Remove connection
+        del active_connections[connection_key]
+        
+        await ctx.send(f"✅ Removed {member.display_name} from your team.")
+        
+        try:
+            await member.send(f"👋 {user_data[user_id].name} has removed you from their team.")
+        except:
+            pass
+
+    @bot.command()
+    async def msg(ctx, target_name: str, *, message: str):
+        """Send a message to a connected user by their profile name"""
         user_id = ctx.author.id
         
-        if user_id in user_data:
-            for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp']:
-                filepath = f"user_photos/{user_id}{ext}"
-                if os.path.exists(filepath):
-                    os.remove(filepath)
+        if user_id not in user_data:
+            await ctx.send("❌ You need a profile to send messages!")
+            return
+        
+        # Find user by profile name
+        target_id = None
+        for uid, person in user_data.items():
+            if person.name.lower() == target_name.lower():
+                target_id = uid
+                break
+        
+        if target_id is None:
+            await ctx.send(f"❌ No user found with name '{target_name}'")
+            return
+        
+        connection_key = get_connection_key(user_id, target_id)
+        
+        if connection_key not in active_connections:
+            await ctx.send(f"❌ You're not connected with {target_name}!")
+            return
+        
+        # Send message
+        try:
+            target_user = await bot.fetch_user(target_id)
+            sender_name = user_data[user_id].name
             
-            # Remove all connections
-            connections_to_remove = [key for key in active_connections.keys() if user_id in key]
-            for key in connections_to_remove:
-                del active_connections[key]
+            await target_user.send(f"💬 **Message from {sender_name}:**\n{message}")
+            await ctx.send(f"✅ Message sent to {target_name}!")
+        except Exception as e:
+            await ctx.send(f"❌ Failed to send message: {str(e)}")
+
+    @bot.command()
+    async def dm(ctx, target_username: str, *, message: str):
+        """Send a message to a connected user by their Discord username"""
+        user_id = ctx.author.id
+        
+        if user_id not in user_data:
+            await ctx.send("❌ You need a profile to send messages!")
+            return
+        
+        # Find user by Discord username
+        target_id = None
+        for guild in bot.guilds:
+            for member in guild.members:
+                if member.name.lower() == target_username.lower():
+                    if member.id in user_data:
+                        target_id = member.id
+                        break
+            if target_id:
+                break
+        
+        if target_id is None:
+            await ctx.send(f"❌ No connected user found with username '{target_username}'")
+            return
+        
+        connection_key = get_connection_key(user_id, target_id)
+        
+        if connection_key not in active_connections:
+            await ctx.send(f"❌ You're not connected with @{target_username}!")
+            return
+        
+        # Send message
+        try:
+            target_user = await bot.fetch_user(target_id)
+            sender_name = user_data[user_id].name
             
-            del user_data[user_id]
-            await ctx.send("✅ Your profile and all connections have been deleted.")
-        else:
-            await ctx.send("❌ You don't have a profile to delete.")
-    
+            await target_user.send(f"💬 **Message from {sender_name}:**\n{message}")
+            await ctx.send(f"✅ Message sent to @{target_username}!")
+        except Exception as e:
+            await ctx.send(f"❌ Failed to send message: {str(e)}")
+
+    @bot.event
+    async def on_message(message):
+        """Handle direct messages to the bot"""
+        # Process commands first
+        await bot.process_commands(message)
+        
+        # Ignore bot's own messages
+        if message.author.bot:
+            return
+        
+        # Check if it's a DM
+        if isinstance(message.channel, discord.DMChannel):
+            user_id = message.author.id
+            
+            if user_id not in user_data:
+                return
+            
+            # Find all connections
+            user_connections = get_user_connections(user_id)
+            
+            if len(user_connections) == 0:
+                await message.channel.send("❌ You're not connected with anyone! Use `!findmatch` to find teammates.")
+                return
+            
+            if len(user_connections) == 1:
+                # Auto-send to the only connection
+                connection_key = user_connections[0]
+                other_id = get_other_user_id(connection_key, user_id)
+                
+                try:
+                    other_user = await bot.fetch_user(other_id)
+                    sender_name = user_data[user_id].name
+                    
+                    await other_user.send(f"💬 **Message from {sender_name}:**\n{message.content}")
+                    await message.channel.send(f"✅ Message sent to {user_data[other_id].name}!")
+                except Exception as e:
+                    await message.channel.send(f"❌ Failed to send message: {str(e)}")
+            else:
+                # Multiple connections - ask user to specify
+                names = []
+                for key in user_connections:
+                    other_id = get_other_user_id(key, user_id)
+                    if other_id in user_data:
+                        names.append(user_data[other_id].name)
+                
+                await message.channel.send(
+                    f"You have multiple connections! Please use:\n"
+                    f"`!msg <name> <message>` to specify who to message.\n\n"
+                    f"Your connections: {', '.join(names)}"
+                )
+
     @bot.command()
     async def update(ctx):
         """Update your profile"""
         user_id = ctx.author.id
         
-        if user_id in user_data:
-            for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp']:
-                filepath = f"user_photos/{user_id}{ext}"
-                if os.path.exists(filepath):
-                    os.remove(filepath)
-            
-            del user_data[user_id]
+        if user_id not in user_data:
+            await ctx.send("❌ You don't have a profile! Create one with `!setup`")
+            return
         
-        await setup(ctx)
-    
-    @bot.command()
-    async def send(ctx):
-        """Fun command for friends"""
-        await ctx.send("FUCK YOU ALL")
-    
-    @bot.command()
-    async def receive(ctx):
-        """Fun command for friends"""
-        await ctx.send("IM GNA POUND YOU")
+        await ctx.send("🔄 Profile update coming soon! For now, use `!delete` then `!setup` to recreate your profile.")
 
     @bot.command()
-    async def removemember(ctx, member: discord.Member):
-        """Remove a permanent teammate from your team"""
+    async def delete(ctx):
+        """Delete your profile"""
         user_id = ctx.author.id
         
         if user_id not in user_data:
-            await ctx.send("❌ You need to create a profile first! Use `!setup`")
+            await ctx.send("❌ You don't have a profile!")
             return
         
-        if member.id not in user_data:
-            await ctx.send(f"❌ {member.display_name} doesn't have a profile!")
-            return
-        
-        connection_key = get_connection_key(user_id, member.id)
-        
-        if connection_key not in active_connections:
-            await ctx.send(f"❌ You're not connected with {member.display_name}!")
-            return
-        
-        connection_data = active_connections[connection_key]
-        
-        # Check if connection is permanent
-        if not connection_data.get('permanent'):
-            await ctx.send(f"⚠️ This connection isn't permanent yet! Wait for the 30-minute decision period to complete first.")
-            return
-        
-        # Confirmation message
-        embed = discord.Embed(
-            title="⚠️ Remove Teammate?",
-            description=f"Are you sure you want to remove **{user_data[member.id].name}** from your team?",
-            color=discord.Color.orange()
-        )
-        embed.add_field(
-            name="❗ This action cannot be undone",
-            value="React with ✅ to confirm or ❌ to cancel (30 seconds)",
-            inline=False
-        )
-        
-        confirm_msg = await ctx.send(embed=embed)
-        await confirm_msg.add_reaction("✅")
-        await confirm_msg.add_reaction("❌")
-        
-        def check(reaction, user):
-            return user == ctx.author and str(reaction.emoji) in ["✅", "❌"] and reaction.message.id == confirm_msg.id
-        
-        try:
-            reaction, user = await bot.wait_for('reaction_add', timeout=30.0, check=check)
+        # Remove all connections
+        connections_to_remove = get_user_connections(user_id)
+        for key in connections_to_remove:
+            other_id = get_other_user_id(key, user_id)
+            del active_connections[key]
             
-            if str(reaction.emoji) == "✅":
-                # Remove the connection
-                del active_connections[connection_key]
-                
-                # Notify both users
-                try:
-                    other_user = await bot.fetch_user(member.id)
-                    await other_user.send(f"💔 **{user_data[user_id].name}** has removed you from their team.")
-                except:
-                    pass
-                
-                await ctx.send(f"✅ You've removed **{user_data[member.id].name}** from your team.\n**Your connections: {get_connection_count(user_id)}/{MAX_CONNECTIONS}**")
-            else:
-                await ctx.send("❌ Removal cancelled.")
-                
-        except asyncio.TimeoutError:
-            await ctx.send("⏱️ Removal cancelled - timed out.")
-            
+            # Notify the other user
+            try:
+                other_user = await bot.fetch_user(other_id)
+                await other_user.send(f"👋 {user_data[user_id].name} has deleted their profile. Your connection has been removed.")
+            except:
+                pass
+        
+        del user_data[user_id]
+        await ctx.send("✅ Your profile has been deleted along with all connections.")
+
     @bot.command()
-    async def chat(ctx, member: discord.Member = None):
-        """Get DM information for your teammates"""
+    async def viewteam(ctx, member: discord.Member = None):
+        """View all your active connections or get info about a specific one"""
         user_id = ctx.author.id
         
         if user_id not in user_data:
@@ -1261,13 +1035,17 @@ def main():
                     is_permanent = active_connections[connection_key].get('permanent', False)
                     status = "⭐ Permanent" if is_permanent else "⏰ Trial"
                     
+                    # Calculate distance
+                    match_data = calculate_match_score(user_data[user_id], other_person)
+                    distance_text = f" ({match_data['distance_km']} km away)" if match_data['distance_km'] else ""
+                    
                     # Smart formatting for names with spaces
                     msg_cmd = f'!msg "{other_person.name}"' if ' ' in other_person.name else f'!msg {other_person.name}'
                     dm_cmd = f'!dm "{other_user.name}"' if ' ' in other_user.name else f'!dm {other_user.name}'
                     
                     embed.add_field(
                         name=f"{status} - {other_person.name}",
-                        value=f"{other_user.mention} (`{other_user.name}`)\n💬 `{msg_cmd} <message>`\n📧 `{dm_cmd} <message>`",
+                        value=f"{other_user.mention} (`{other_user.name}`)\n📍 {other_person.location}{distance_text}\n💬 `{msg_cmd} <message>`\n📧 `{dm_cmd} <message>`",
                         inline=False
                     )
                 except:
@@ -1287,6 +1065,10 @@ def main():
         other_person = user_data[member.id]
         is_permanent = active_connections[connection_key].get('permanent', False)
         
+        # Calculate distance
+        match_data = calculate_match_score(user_data[user_id], other_person)
+        distance_text = f"{match_data['distance_km']} km away" if match_data['distance_km'] else "Distance unavailable"
+        
         # Smart formatting for names with spaces
         msg_cmd = f'!msg "{other_person.name}"' if ' ' in other_person.name else f'!msg {other_person.name}'
         dm_cmd = f'!dm "{member.name}"' if ' ' in member.name else f'!dm {member.name}'
@@ -1298,6 +1080,7 @@ def main():
         )
         embed.add_field(name="Username", value=f"`{member.name}`", inline=True)
         embed.add_field(name="Status", value="⭐ Permanent" if is_permanent else "⏰ Trial", inline=True)
+        embed.add_field(name="📍 Distance", value=distance_text, inline=True)
         embed.add_field(
             name="How to Message",
             value=f"📝 `{msg_cmd} Your message here`\n📧 `{dm_cmd} Your message here`",
@@ -1348,10 +1131,13 @@ def main():
                 # Smart formatting for names with spaces
                 msg_cmd = f'!msg "{other_person.name}"' if ' ' in other_person.name else f'!msg {other_person.name}'
                 
+                # Add distance to field
+                distance_text = f" ({match_data['distance_km']} km away)" if match_data['distance_km'] else ""
+                
                 field_value = (
                     f"@{member.name}\n"
                     f"🎮 Common Games: {', '.join(match_data['common_games'])}\n"
-                    f"📍 {other_person.location}\n"
+                    f"📍 {other_person.location}{distance_text}\n"
                     f"📝 {other_person.bio[:50]}..." if len(other_person.bio) > 50 else other_person.bio + "\n"
                     f"💬 `{msg_cmd} <message>`"
                 )
@@ -1414,7 +1200,7 @@ def main():
         
         embed.add_field(
             name="ℹ️ System Info",
-            value=f"• Max {MAX_CONNECTIONS} connections per user\n• 30-minute trial period\n• Keep or release teammates\n• Chat via bot relay",
+            value=f"• Max {MAX_CONNECTIONS} connections per user\n• 30-minute trial period\n• Keep or release teammates\n• Chat via bot relay\n• See distance between MRT stations!",
             inline=False
         )
         
