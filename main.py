@@ -20,7 +20,7 @@ class Person:
         self.name = name
         self.age = age
         self.games = games if games else []
-        self.location = location
+        self.location = location[2]
         self.bio = bio
         self.photo_url = photo_url
 
