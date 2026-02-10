@@ -1129,7 +1129,7 @@ def main():
         await ctx.send(embed=embed)
 
     @bot.command()
-    async def help(ctx):
+    async def helpme(ctx):
         """Show all available commands"""
         embed = discord.Embed(
             title="🎮 GameTalk Bot - Commands",
