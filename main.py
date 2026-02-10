@@ -6,7 +6,7 @@ import os
 import requests
 import aiohttp
 from datetime import datetime, timedelta
-from discord.ui import View, Button
+from discord.ui import View, Button, Select
 
 # Store user data (in production, use a database)
 user_data = {}
@@ -14,6 +14,136 @@ user_data = {}
 active_connections = {}  # {(user1_id, user2_id): {'timestamp': datetime, 'user1_decision': None, 'user2_decision': None}}
 # Maximum connections per user
 MAX_CONNECTIONS = 5
+
+# Singapore MRT Stations (grouped by line for easier navigation)
+MRT_STATIONS = {
+    "North-South Line": [
+        "Jurong East", "Bukit Batok", "Bukit Gombak", "Choa Chu Kang", "Yew Tee",
+        "Kranji", "Marsiling", "Woodlands", "Admiralty", "Sembawang", "Canberra",
+        "Yishun", "Khatib", "Yio Chu Kang", "Ang Mo Kio", "Bishan", "Braddell",
+        "Toa Payoh", "Novena", "Newton", "Orchard", "Somerset", "Dhoby Ghaut",
+        "City Hall", "Raffles Place", "Marina Bay", "Marina South Pier"
+    ],
+    "East-West Line": [
+        "Pasir Ris", "Tampines", "Simei", "Tanah Merah", "Bedok", "Kembangan",
+        "Eunos", "Paya Lebar", "Aljunied", "Kallang", "Lavender", "Bugis",
+        "City Hall", "Raffles Place", "Tanjong Pagar", "Outram Park", "Tiong Bahru",
+        "Redhill", "Queenstown", "Commonwealth", "Buona Vista", "Dover", "Clementi",
+        "Jurong East", "Chinese Garden", "Lakeside", "Boon Lay", "Pioneer",
+        "Joo Koon", "Gul Circle", "Tuas Crescent", "Tuas West Road", "Tuas Link"
+    ],
+    "Circle Line": [
+        "Dhoby Ghaut", "Bras Basah", "Esplanade", "Promenade", "Nicoll Highway",
+        "Stadium", "Mountbatten", "Dakota", "Paya Lebar", "MacPherson", "Tai Seng",
+        "Bartley", "Serangoon", "Lorong Chuan", "Bishan", "Marymount", "Caldecott",
+        "Botanic Gardens", "Farrer Road", "Holland Village", "Buona Vista", "one-north",
+        "Kent Ridge", "Haw Par Villa", "Pasir Panjang", "Labrador Park", "Telok Blangah",
+        "HarbourFront", "Marina Bay"
+    ],
+    "Downtown Line": [
+        "Bukit Panjang", "Cashew", "Hillview", "Beauty World", "King Albert Park",
+        "Sixth Avenue", "Tan Kah Kee", "Botanic Gardens", "Stevens", "Newton",
+        "Little India", "Rochor", "Bugis", "Promenade", "Bayfront", "Downtown",
+        "Telok Ayer", "Chinatown", "Fort Canning", "Bencoolen", "Jalan Besar",
+        "Bendemeer", "Geylang Bahru", "Mattar", "MacPherson", "Ubi", "Kaki Bukit",
+        "Bedok North", "Bedok Reservoir", "Tampines West", "Tampines", "Tampines East",
+        "Upper Changi", "Expo"
+    ],
+    "North-East Line": [
+        "HarbourFront", "Outram Park", "Chinatown", "Clarke Quay", "Dhoby Ghaut",
+        "Little India", "Farrer Park", "Boon Keng", "Potong Pasir", "Woodleigh",
+        "Serangoon", "Kovan", "Hougang", "Buangkok", "Sengkang", "Punggol"
+    ],
+    "Thomson-East Coast Line": [
+        "Woodlands North", "Woodlands", "Woodlands South", "Springleaf", "Lentor",
+        "Mayflower", "Bright Hill", "Upper Thomson", "Caldecott", "Mount Pleasant",
+        "Stevens", "Napier", "Orchard Boulevard", "Orchard", "Great World", "Havelock",
+        "Outram Park", "Maxwell", "Shenton Way", "Marina Bay", "Marina South",
+        "Gardens by the Bay", "Tanjong Rhu", "Katong Park", "Tanjong Katong",
+        "Marine Parade", "Marine Terrace", "Siglap", "Bayshore", "Bedok South",
+        "Sungei Bedok"
+    ]
+}
+
+# Flatten all stations into a single list (removing duplicates)
+ALL_MRT_STATIONS = sorted(list(set([station for stations in MRT_STATIONS.values() for station in stations])))
+
+class MRTSelectView(View):
+    """Dropdown menu for selecting MRT station"""
+    def __init__(self, user_id, bot_instance):
+        super().__init__(timeout=180)  # 3 minute timeout
+        self.user_id = user_id
+        self.bot = bot_instance
+        self.selected_station = None
+        
+        # Create dropdown with first 25 stations (Discord limit)
+        # We'll use multiple dropdowns or a different approach for all stations
+        self.add_station_select()
+    
+    def add_station_select(self):
+        # Split stations into groups of 25 (Discord limit per select menu)
+        select1 = Select(
+            placeholder="Choose your nearest MRT station (A-K)",
+            options=[
+                discord.SelectOption(label=station, value=station)
+                for station in ALL_MRT_STATIONS[:25]
+            ]
+        )
+        select1.callback = self.station_callback
+        self.add_item(select1)
+        
+        if len(ALL_MRT_STATIONS) > 25:
+            select2 = Select(
+                placeholder="Choose your nearest MRT station (L-Z)",
+                options=[
+                    discord.SelectOption(label=station, value=station)
+                    for station in ALL_MRT_STATIONS[25:50]
+                ]
+            )
+            select2.callback = self.station_callback
+            self.add_item(select2)
+        
+        if len(ALL_MRT_STATIONS) > 50:
+            select3 = Select(
+                placeholder="More MRT stations",
+                options=[
+                    discord.SelectOption(label=station, value=station)
+                    for station in ALL_MRT_STATIONS[50:75]
+                ]
+            )
+            select3.callback = self.station_callback
+            self.add_item(select3)
+        
+        if len(ALL_MRT_STATIONS) > 75:
+            select4 = Select(
+                placeholder="Additional MRT stations",
+                options=[
+                    discord.SelectOption(label=station, value=station)
+                    for station in ALL_MRT_STATIONS[75:100]
+                ]
+            )
+            select4.callback = self.station_callback
+            self.add_item(select4)
+        
+        if len(ALL_MRT_STATIONS) > 100:
+            select5 = Select(
+                placeholder="More stations",
+                options=[
+                    discord.SelectOption(label=station, value=station)
+                    for station in ALL_MRT_STATIONS[100:min(125, len(ALL_MRT_STATIONS))]
+                ]
+            )
+            select5.callback = self.station_callback
+            self.add_item(select5)
+    
+    async def station_callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ This isn't your selection!", ephemeral=True)
+            return
+        
+        self.selected_station = interaction.data['values'][0]
+        await interaction.response.send_message(f"✅ You selected: **{self.selected_station}**", ephemeral=True)
+        self.stop()
 
 class Person:
     def __init__(self, name="", age=0, games=None, location="", bio="", photo_url=None):
@@ -480,9 +610,20 @@ def main():
             msg = await bot.wait_for('message', check=lambda m: m.author == ctx.author, timeout=60.0)
             games = clean_games(msg.content.split(","))
             
-            await ctx.send("**What is your location?** (e.g., Jurong West, Singapore)")
-            msg = await bot.wait_for('message', check=lambda m: m.author == ctx.author, timeout=60.0)
-            location = msg.content
+            # MRT Station Selection with dropdown
+            await ctx.send("🚇 **Select your nearest MRT station:**")
+            mrt_view = MRTSelectView(user_id, bot)
+            mrt_message = await ctx.send("Use the dropdown menus below:", view=mrt_view)
+            
+            # Wait for selection
+            await mrt_view.wait()
+            
+            if mrt_view.selected_station:
+                location = f"{mrt_view.selected_station} MRT, Singapore"
+                await ctx.send(f"📍 Location set to: **{location}**")
+            else:
+                await ctx.send("⏱️ MRT selection timed out. Using default location.")
+                location = "Singapore"
             
             await ctx.send("**Write something about yourself:**")
             msg = await bot.wait_for('message', check=lambda m: m.author == ctx.author, timeout=60.0)
