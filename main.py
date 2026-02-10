@@ -810,6 +810,16 @@ def main():
                 pass
 
     @bot.command()
+    async def send(ctx):
+        """Fun command for friends"""
+        await ctx.send("FUCK YOU ALL")
+    
+    @bot.command()
+    async def receive(ctx):
+        """Fun command for friends"""
+        await ctx.send("IM GNA POUND YOU")
+
+    @bot.command()
     async def removemember(ctx, member: discord.Member):
         """Remove a permanent teammate"""
         user_id = ctx.author.id
