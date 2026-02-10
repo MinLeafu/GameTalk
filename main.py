@@ -393,14 +393,9 @@ def main():
             msg = await bot.wait_for('message', check=lambda m: m.author == ctx.author, timeout=60.0)
             games = clean_games(msg.content.split(","))
             
-            location_data = get_location_by_ip()
-            if location_data:
-                location = location_data[2]  # Just the city
-                await ctx.send(f"📍 Detected location: **{location}**")
-            else:
-                await ctx.send("**What is your location?** (e.g., New York, USA)")
-                msg = await bot.wait_for('message', check=lambda m: m.author == ctx.author, timeout=60.0)
-                location = msg.content
+            await ctx.send("**What is your location?** (e.g., Jurong West, Singapore)")
+            msg = await bot.wait_for('message', check=lambda m: m.author == ctx.author, timeout=60.0)
+            location = msg.content
             
             await ctx.send("**Write something about yourself:**")
             msg = await bot.wait_for('message', check=lambda m: m.author == ctx.author, timeout=60.0)
