@@ -265,12 +265,18 @@ async def send_match_dm(bot, user1_id, user2_id, match_data, user1_data, user2_d
         
         embed2.set_footer(text="⏰ In 30 minutes, you'll decide: Keep or Release this teammate!")
         
-        # Send DMs
+        # Send DMs with smart formatting for names with spaces
+        user1_msg_cmd = f'!msg "{user2_data.name}"' if ' ' in user2_data.name else f'!msg {user2_data.name}'
+        user1_dm_cmd = f'!dm "{user2.name}"' if ' ' in user2.name else f'!dm {user2.name}'
+        
+        user2_msg_cmd = f'!msg "{user1_data.name}"' if ' ' in user1_data.name else f'!msg {user1_data.name}'
+        user2_dm_cmd = f'!dm "{user1.name}"' if ' ' in user1.name else f'!dm {user1.name}'
+        
         await user1.send(embed=embed1)
-        await user1.send(f"💬 **Send messages to {user2_data.name}:**\nUse `!msg {user2_data.name} Your message here`\nOr use `!dm @{user2.name} Your message here`")
+        await user1.send(f"💬 **Send messages to {user2_data.name}:**\nUse `{user1_msg_cmd} Your message here`\nOr use `{user1_dm_cmd} Your message here`")
         
         await user2.send(embed=embed2)
-        await user2.send(f"💬 **Send messages to {user1_data.name}:**\nUse `!msg {user1_data.name} Your message here`\nOr use `!dm @{user1.name} Your message here`")
+        await user2.send(f"💬 **Send messages to {user1_data.name}:**\nUse `{user2_msg_cmd} Your message here`\nOr use `{user2_dm_cmd} Your message here`")
         
         return True
     except discord.Forbidden:
@@ -687,13 +693,41 @@ def main():
             await ctx.send(f"⚠️ Couldn't send DM. Make sure both of you have DMs enabled!")
     
     @bot.command()
-    async def msg(ctx, recipient_name: str, *, message: str):
+    async def msg(ctx, *, full_message: str):
         """Send a message to a connected teammate using their profile name
-        Usage: !msg John Hey, want to play Valorant?"""
+        Usage: !msg John Hey, want to play Valorant?
+        Or for names with spaces: !msg "John Doe" Hey there!"""
         sender_id = ctx.author.id
         
         if sender_id not in user_data:
             await ctx.send("❌ You need to create a profile first! Use `!setup`")
+            return
+        
+        # Parse the message - handle both quoted and unquoted names
+        recipient_name = None
+        message = None
+        
+        # Check if starts with a quote (for names with spaces)
+        if full_message.startswith('"'):
+            # Find the closing quote
+            end_quote = full_message.find('"', 1)
+            if end_quote != -1:
+                recipient_name = full_message[1:end_quote]
+                message = full_message[end_quote+1:].strip()
+            else:
+                await ctx.send("❌ Missing closing quote for name!")
+                return
+        else:
+            # No quotes - take first word as name
+            parts = full_message.split(None, 1)
+            if len(parts) < 2:
+                await ctx.send("❌ Usage: `!msg <name> <message>` or `!msg \"Name With Spaces\" <message>`")
+                return
+            recipient_name = parts[0]
+            message = parts[1]
+        
+        if not message:
+            await ctx.send("❌ You need to include a message!")
             return
         
         # Find the recipient among connections
@@ -722,7 +756,12 @@ def main():
                 timestamp=datetime.utcnow()
             )
             embed.set_author(name=f"Message from {sender_name}", icon_url=ctx.author.display_avatar.url)
-            embed.set_footer(text=f"Reply with: !msg {sender_name} <your message>")
+            
+            # Smart footer - add quotes if sender name has spaces
+            if ' ' in sender_name:
+                embed.set_footer(text=f"Reply with: !msg \"{sender_name}\" <your message>")
+            else:
+                embed.set_footer(text=f"Reply with: !msg {sender_name} <your message>")
             
             await recipient.send(embed=embed)
             await ctx.send(f"✅ Message sent to {user_data[recipient_id].name}!")
@@ -731,26 +770,67 @@ def main():
             await ctx.send(f"❌ Failed to send message: {e}")
     
     @bot.command()
-    async def dm(ctx, member: discord.Member, *, message: str):
-        """Send a message to a connected teammate using Discord @mention
-        Usage: !dm @username Hey, want to play?"""
+    async def dm(ctx, *, full_message: str):
+        """Send a message to a connected teammate using their Discord username
+        Usage: !dm username Hey, want to play?
+        Or for names with spaces: !dm "user name" Hey there!"""
         sender_id = ctx.author.id
         
         if sender_id not in user_data:
             await ctx.send("❌ You need to create a profile first! Use `!setup`")
             return
         
-        if member.id not in user_data:
-            await ctx.send(f"❌ {member.display_name} doesn't have a profile!")
+        # Parse the message - handle both quoted and unquoted names
+        recipient_name = None
+        message = None
+        
+        # Check if starts with a quote (for names with spaces)
+        if full_message.startswith('"'):
+            # Find the closing quote
+            end_quote = full_message.find('"', 1)
+            if end_quote != -1:
+                recipient_name = full_message[1:end_quote]
+                message = full_message[end_quote+1:].strip()
+            else:
+                await ctx.send("❌ Missing closing quote for name!")
+                return
+        else:
+            # No quotes - take first word as name
+            parts = full_message.split(None, 1)
+            if len(parts) < 2:
+                await ctx.send("❌ Usage: `!dm username <message>` or `!dm \"user name\" <message>`")
+                return
+            recipient_name = parts[0]
+            message = parts[1]
+        
+        if not message:
+            await ctx.send("❌ You need to include a message!")
             return
         
-        # Check if connected
-        if not is_connected(sender_id, member.id):
-            await ctx.send(f"❌ You're not connected with {member.display_name}!\nUse `!connect @{member.name}` first.")
+        # Find the member by Discord username among connections
+        recipient_id = None
+        user_connections = get_user_connections(sender_id)
+        
+        for connection_key in user_connections:
+            other_id = get_other_user_id(connection_key, sender_id)
+            if other_id in user_data:
+                try:
+                    member = await bot.fetch_user(other_id)
+                    # Check both username and display name
+                    if member.name.lower() == recipient_name.lower() or member.display_name.lower() == recipient_name.lower():
+                        recipient_id = other_id
+                        break
+                except:
+                    continue
+        
+        if not recipient_id:
+            await ctx.send(f"❌ You're not connected with Discord user '{recipient_name}'.\nUse `!viewteam` to see your connections.")
             return
         
         try:
+            member = await bot.fetch_user(recipient_id)
             sender_name = user_data[sender_id].name
+            sender_discord = ctx.author.name
             
             # Create message embed
             embed = discord.Embed(
@@ -759,13 +839,18 @@ def main():
                 timestamp=datetime.utcnow()
             )
             embed.set_author(name=f"Message from {sender_name}", icon_url=ctx.author.display_avatar.url)
-            embed.set_footer(text=f"Reply with: !dm @{ctx.author.name} <your message>")
+            
+            # Smart footer - add quotes if sender Discord name has spaces
+            if ' ' in sender_discord:
+                embed.set_footer(text=f"Reply with: !dm \"{sender_discord}\" <your message>")
+            else:
+                embed.set_footer(text=f"Reply with: !dm {sender_discord} <your message>")
             
             await member.send(embed=embed)
-            await ctx.send(f"✅ Message sent to {user_data[member.id].name}!")
+            await ctx.send(f"✅ Message sent to {user_data[recipient_id].name}!")
             
         except discord.Forbidden:
-            await ctx.send(f"❌ Cannot send DM to {member.display_name}. They may have DMs disabled.")
+            await ctx.send(f"❌ Cannot send DM to {recipient_name}. They may have DMs disabled.")
         except Exception as e:
             await ctx.send(f"❌ Failed to send message: {e}")
     
@@ -830,12 +915,15 @@ def main():
                     else:
                         status = "⚠️ **Decision time! Check DMs**"
                 
+                # Smart formatting for names with spaces
+                msg_cmd = f'!msg "{other_person.name}"' if ' ' in other_person.name else f'!msg {other_person.name}'
+                
                 field_value = (
                     f"@{member.name}\n"
                     f"🎮 Common Games: {', '.join(calculate_match_score(user_data[user_id], other_person)['common_games'][:3])}\n"
                     f"📍 {other_person.location}\n"
                     f"{status}\n"
-                    f"💬 Message: `!msg {other_person.name} <text>`"
+                    f"💬 Message: `{msg_cmd} <text>`"
                 )
                 
                 embed.add_field(
@@ -1032,9 +1120,13 @@ def main():
                     is_permanent = active_connections[connection_key].get('permanent', False)
                     status = "⭐ Permanent" if is_permanent else "⏰ Trial"
                     
+                    # Smart formatting for names with spaces
+                    msg_cmd = f'!msg "{other_person.name}"' if ' ' in other_person.name else f'!msg {other_person.name}'
+                    dm_cmd = f'!dm "{other_user.name}"' if ' ' in other_user.name else f'!dm {other_user.name}'
+                    
                     embed.add_field(
                         name=f"{status} - {other_person.name}",
-                        value=f"{other_user.mention} (`{other_user.name}`)\n💬 `!msg {other_person.name} <message>`\n📧 `!dm @{other_user.name} <message>`",
+                        value=f"{other_user.mention} (`{other_user.name}`)\n💬 `{msg_cmd} <message>`\n📧 `{dm_cmd} <message>`",
                         inline=False
                     )
                 except:
@@ -1054,6 +1146,10 @@ def main():
         other_person = user_data[member.id]
         is_permanent = active_connections[connection_key].get('permanent', False)
         
+        # Smart formatting for names with spaces
+        msg_cmd = f'!msg "{other_person.name}"' if ' ' in other_person.name else f'!msg {other_person.name}'
+        dm_cmd = f'!dm "{member.name}"' if ' ' in member.name else f'!dm {member.name}'
+        
         embed = discord.Embed(
             title=f"💬 Chat with {other_person.name}",
             description=f"{member.mention}",
@@ -1063,7 +1159,7 @@ def main():
         embed.add_field(name="Status", value="⭐ Permanent" if is_permanent else "⏰ Trial", inline=True)
         embed.add_field(
             name="How to Message",
-            value=f"📝 `!msg {other_person.name} Your message here`\n📧 `!dm @{member.name} Your message here`",
+            value=f"📝 `{msg_cmd} Your message here`\n📧 `{dm_cmd} Your message here`",
             inline=False
         )
         
@@ -1108,12 +1204,15 @@ def main():
             try:
                 member = await bot.fetch_user(other_id)
                 
+                # Smart formatting for names with spaces
+                msg_cmd = f'!msg "{other_person.name}"' if ' ' in other_person.name else f'!msg {other_person.name}'
+                
                 field_value = (
                     f"@{member.name}\n"
                     f"🎮 Common Games: {', '.join(match_data['common_games'])}\n"
                     f"📍 {other_person.location}\n"
                     f"📝 {other_person.bio[:50]}..." if len(other_person.bio) > 50 else other_person.bio + "\n"
-                    f"💬 `!msg {other_person.name} <message>`"
+                    f"💬 `{msg_cmd} <message>`"
                 )
                 
                 embed.add_field(
@@ -1129,7 +1228,7 @@ def main():
         await ctx.send(embed=embed)
 
     @bot.command()
-    async def helpme(ctx):
+    async def commands(ctx):
         """Show all available commands"""
         embed = discord.Embed(
             title="🎮 GameTalk Bot - Commands",
@@ -1164,9 +1263,9 @@ def main():
         embed.add_field(
             name="💬 Messaging Commands",
             value=(
-                "`!msg <name> <message>` - Message by profile name\n"
-                "`!dm @user <message>` - Message by Discord @\n"
-                "`!chat [@user]` - Get messaging info\n"
+                "`!msg Name <message>` - Message by profile name\n"
+                "`!msg \"Name With Spaces\" <msg>` - For spaced names\n"
+                "`!dm username <message>` - Message by Discord username\n"
                 "**Or just send a DM** if you have 1 connection!"
             ),
             inline=False
