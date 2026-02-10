@@ -464,8 +464,8 @@ def main():
             age_msg = await bot.wait_for('message', check=check, timeout=60.0)
             try:
                 age = int(age_msg.content.strip())
-                if age < 13 or age > 100:
-                    await ctx.send("❌ Please enter a valid age between 13 and 100.")
+                if age < 1:
+                    await ctx.send("❌ Please enter a valid age.")
                     return
             except ValueError:
                 await ctx.send("❌ Please enter a valid number for age.")
@@ -836,12 +836,39 @@ def main():
             pass
 
     @bot.command()
-    async def msg(ctx, target_name: str, *, message: str):
+    async def msg(ctx, *, args: str):
         """Send a message to a connected user by their profile name"""
         user_id = ctx.author.id
         
         if user_id not in user_data:
             await ctx.send("❌ You need a profile to send messages!")
+            return
+        
+        # Parse target name and message
+        # Handle quoted names: !msg "Name With Spaces" message here
+        # Handle unquoted names: !msg SingleName message here
+        target_name = None
+        message = None
+        
+        if args.startswith('"'):
+            # Find closing quote
+            end_quote = args.find('"', 1)
+            if end_quote == -1:
+                await ctx.send('❌ Missing closing quote for name. Use: `!msg "Name" message`')
+                return
+            target_name = args[1:end_quote]
+            message = args[end_quote+1:].strip()
+        else:
+            # No quotes - split on first space
+            parts = args.split(None, 1)
+            if len(parts) < 2:
+                await ctx.send("❌ Usage: `!msg Name message` or `!msg \"Name With Spaces\" message`")
+                return
+            target_name = parts[0]
+            message = parts[1]
+        
+        if not message:
+            await ctx.send("❌ Please include a message to send!")
             return
         
         # Find user by profile name
@@ -872,12 +899,39 @@ def main():
             await ctx.send(f"❌ Failed to send message: {str(e)}")
 
     @bot.command()
-    async def dm(ctx, target_username: str, *, message: str):
+    async def dm(ctx, *, args: str):
         """Send a message to a connected user by their Discord username"""
         user_id = ctx.author.id
         
         if user_id not in user_data:
             await ctx.send("❌ You need a profile to send messages!")
+            return
+        
+        # Parse target username and message
+        # Handle quoted usernames: !dm "Username With Spaces" message here
+        # Handle unquoted usernames: !dm Username message here
+        target_username = None
+        message = None
+        
+        if args.startswith('"'):
+            # Find closing quote
+            end_quote = args.find('"', 1)
+            if end_quote == -1:
+                await ctx.send('❌ Missing closing quote for username. Use: `!dm "Username" message`')
+                return
+            target_username = args[1:end_quote]
+            message = args[end_quote+1:].strip()
+        else:
+            # No quotes - split on first space
+            parts = args.split(None, 1)
+            if len(parts) < 2:
+                await ctx.send("❌ Usage: `!dm Username message` or `!dm \"Username With Spaces\" message`")
+                return
+            target_username = parts[0]
+            message = parts[1]
+        
+        if not message:
+            await ctx.send("❌ Please include a message to send!")
             return
         
         # Find user by Discord username
@@ -1191,8 +1245,9 @@ def main():
             name="💬 Messaging Commands",
             value=(
                 "`!msg Name <message>` - Message by profile name\n"
-                "`!msg \"Name With Spaces\" <msg>` - For spaced names\n"
-                "`!dm username <message>` - Message by Discord username\n"
+                "`!msg \"Name With Spaces\" <message>` - For names with spaces\n"
+                "`!dm Username <message>` - Message by Discord username\n"
+                "`!dm \"Username With Spaces\" <message>` - For usernames with spaces\n"
                 "**Or just send a DM** if you have 1 connection!"
             ),
             inline=False
