@@ -769,6 +769,130 @@ def main():
         """Fun command for friends"""
         await ctx.send("IM GNA POUND YOU")
 
+    @bot.command()
+    async def removemember(ctx, member: discord.Member):
+        """Remove a permanent teammate from your team"""
+        user_id = ctx.author.id
+        
+        if user_id not in user_data:
+            await ctx.send("❌ You need to create a profile first! Use `!setup`")
+            return
+        
+        if member.id not in user_data:
+            await ctx.send(f"❌ {member.display_name} doesn't have a profile!")
+            return
+        
+        connection_key = get_connection_key(user_id, member.id)
+        
+        if connection_key not in active_connections:
+            await ctx.send(f"❌ You're not connected with {member.display_name}!")
+            return
+        
+        connection_data = active_connections[connection_key]
+        
+        # Check if connection is permanent
+        if not connection_data.get('permanent'):
+            await ctx.send(f"⚠️ This connection isn't permanent yet! Wait for the 30-minute decision period to complete first.")
+            return
+        
+        # Confirmation message
+        embed = discord.Embed(
+            title="⚠️ Remove Teammate?",
+            description=f"Are you sure you want to remove **{user_data[member.id].name}** from your team?",
+            color=discord.Color.orange()
+        )
+        embed.add_field(
+            name="❗ This action cannot be undone",
+            value="React with ✅ to confirm or ❌ to cancel (30 seconds)",
+            inline=False
+        )
+        
+        confirm_msg = await ctx.send(embed=embed)
+        await confirm_msg.add_reaction("✅")
+        await confirm_msg.add_reaction("❌")
+        
+        def check(reaction, user):
+            return user == ctx.author and str(reaction.emoji) in ["✅", "❌"] and reaction.message.id == confirm_msg.id
+        
+        try:
+            reaction, user = await bot.wait_for('reaction_add', timeout=30.0, check=check)
+            
+            if str(reaction.emoji) == "✅":
+                # Remove the connection
+                del active_connections[connection_key]
+                
+                # Notify both users
+                try:
+                    other_user = await bot.fetch_user(member.id)
+                    await other_user.send(f"💔 **{user_data[user_id].name}** has removed you from their team.")
+                except:
+                    pass
+                
+                await ctx.send(f"✅ You've removed **{user_data[member.id].name}** from your team.\n**Your connections: {get_connection_count(user_id)}/{MAX_CONNECTIONS}**")
+            else:
+                await ctx.send("❌ Removal cancelled.")
+                
+        except asyncio.TimeoutError:
+            await ctx.send("⏱️ Removal cancelled - timed out.")
+
+    @bot.command()
+    async def myteam(ctx):
+        """View only your permanent teammates"""
+        user_id = ctx.author.id
+        
+        if user_id not in user_data:
+            await ctx.send("❌ You need to create a profile first! Use `!setup`")
+            return
+        
+        user_connections = get_user_connections(user_id)
+        
+        # Filter only permanent connections
+        permanent_connections = [
+            key for key in user_connections 
+            if active_connections[key].get('permanent', False)
+        ]
+        
+        if not permanent_connections:
+            await ctx.send("📭 You have no permanent teammates yet!\nUse `!findmatch` and `!connect` to find gaming buddies.")
+            return
+        
+        embed = discord.Embed(
+            title=f"⭐ Your Permanent Gaming Team",
+            description=f"**Permanent Teammates: {len(permanent_connections)}**",
+            color=discord.Color.green()
+        )
+        
+        for connection_key in permanent_connections:
+            other_id = get_other_user_id(connection_key, user_id)
+            
+            if other_id not in user_data:
+                continue
+            
+            other_person = user_data[other_id]
+            match_data = calculate_match_score(user_data[user_id], other_person)
+            
+            try:
+                member = await bot.fetch_user(other_id)
+                
+                field_value = (
+                    f"@{member.name}\n"
+                    f"🎮 Common Games: {', '.join(match_data['common_games'])}\n"
+                    f"📍 {other_person.location}\n"
+                    f"📝 {other_person.bio[:50]}..." if len(other_person.bio) > 50 else other_person.bio
+                )
+                
+                embed.add_field(
+                    name=f"⭐ {other_person.name}",
+                    value=field_value,
+                    inline=False
+                )
+            except:
+                pass
+        
+        embed.set_footer(text="Use !removemember @user to remove a teammate")
+        
+        await ctx.send(embed=embed)
+
     async def help_gametalk(ctx):
         """Show all available commands"""
         embed = discord.Embed(
