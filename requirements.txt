@@ -1,2 +1,36 @@
 discord.py
 python-dotenv
+requests
+aiohttp
+```
+
+## Available Commands:
+
+### Two ways to create a profile:
+
+**1. Interactive Setup (Recommended):**
+```
+!setup
+```
+Bot asks you questions one by one and you respond. Includes photo upload and bio!
+
+**2. Quick Setup:**
+```
+!setprofile John 25 NYC Valorant, Minecraft, League
+```
+Fast one-line setup (no bio or photo).
+
+### View Profiles:
+```
+!profile
+!profile @Username
+```
+
+### Compare Profiles:
+```
+!compare @Username
+```
+
+### Delete Profile:
+```
+!deleteprofile
