@@ -764,6 +764,7 @@ def main():
         """Fun command for friends"""
         await ctx.send("FUCK YOU ALL")
     
+    @bot.command()
     async def receive(ctx):
         """Fun command for friends"""
         await ctx.send("IM GNA POUND YOU")
