@@ -126,6 +126,24 @@ def can_make_decision(connection_key):
     time_elapsed = get_time_since_match(connection_key)
     return time_elapsed >= timedelta(minutes=30)
 
+def is_connected(user1_id, user2_id):
+    """Check if two users are connected"""
+    connection_key = get_connection_key(user1_id, user2_id)
+    return connection_key in active_connections
+
+def get_connected_user_from_name(sender_id, recipient_name):
+    """Find a connected user by their Discord username or display name"""
+    user_connections = get_user_connections(sender_id)
+    
+    for connection_key in user_connections:
+        other_id = get_other_user_id(connection_key, sender_id)
+        if other_id in user_data:
+            # Check if the recipient name matches the user's profile name or game name
+            if user_data[other_id].name.lower() == recipient_name.lower():
+                return other_id
+    
+    return None
+
 class KeepOrReleaseView(View):
     """UI for keep/release decision"""
     def __init__(self, bot, connection_key, user_id, timeout=None):
@@ -249,10 +267,10 @@ async def send_match_dm(bot, user1_id, user2_id, match_data, user1_data, user2_d
         
         # Send DMs
         await user1.send(embed=embed1)
-        await user1.send(f"Say hi to @{user2.name}! 👋\n*You can chat for 30 minutes before making your decision.*")
+        await user1.send(f"💬 **Send messages to {user2_data.name}:**\nUse `!msg {user2_data.name} Your message here`\nOr use `!dm @{user2.name} Your message here`")
         
         await user2.send(embed=embed2)
-        await user2.send(f"Say hi to @{user1.name}! 👋\n*You can chat for 30 minutes before making your decision.*")
+        await user2.send(f"💬 **Send messages to {user1_data.name}:**\nUse `!msg {user1_data.name} Your message here`\nOr use `!dm @{user1.name} Your message here`")
         
         return True
     except discord.Forbidden:
@@ -334,6 +352,7 @@ def main():
 
     intents = discord.Intents.default()
     intents.message_content = True
+    intents.members = True  # Enable member intents for better user lookups
     bot = commands.Bot(command_prefix="!", intents=intents)
     
     # Background task for decision prompts
@@ -342,6 +361,68 @@ def main():
         print(f'{bot.user} has connected to Discord!')
         print(f'Bot is ready to match gamers!')
         bot.loop.create_task(check_decision_times())
+    
+    # Handle DM messages for relay
+    @bot.event
+    async def on_message(message):
+        # Ignore messages from the bot itself
+        if message.author == bot.user:
+            return
+        
+        # Process commands first
+        await bot.process_commands(message)
+        
+        # Check if it's a DM (not in a guild/server)
+        if message.guild is None and not message.content.startswith('!'):
+            sender_id = message.author.id
+            
+            # Check if sender has a profile
+            if sender_id not in user_data:
+                return
+            
+            # Get all connections for this user
+            user_connections = get_user_connections(sender_id)
+            
+            if not user_connections:
+                await message.channel.send("❌ You're not connected with anyone yet! Use `!findmatch` to find teammates.")
+                return
+            
+            # If user has only one connection, auto-send to them
+            if len(user_connections) == 1:
+                connection_key = user_connections[0]
+                recipient_id = get_other_user_id(connection_key, sender_id)
+                
+                try:
+                    recipient = await bot.fetch_user(recipient_id)
+                    sender_name = user_data[sender_id].name
+                    
+                    # Create message embed
+                    embed = discord.Embed(
+                        description=message.content,
+                        color=discord.Color.blue(),
+                        timestamp=datetime.utcnow()
+                    )
+                    embed.set_author(name=f"Message from {sender_name}", icon_url=message.author.display_avatar.url)
+                    embed.set_footer(text="Reply directly or use !msg to respond")
+                    
+                    # Forward attachments if any
+                    if message.attachments:
+                        for attachment in message.attachments:
+                            embed.add_field(name="📎 Attachment", value=f"[{attachment.filename}]({attachment.url})", inline=False)
+                    
+                    await recipient.send(embed=embed)
+                    await message.add_reaction("✅")  # Confirm message sent
+                    
+                except Exception as e:
+                    await message.channel.send(f"❌ Failed to send message: {e}")
+            
+            else:
+                # Multiple connections - ask user to specify recipient
+                await message.channel.send(
+                    "❓ You have multiple connections. Please use:\n"
+                    "`!msg <name> <message>` - Send to specific teammate\n"
+                    "`!dm @username <message>` - Send using Discord username"
+                )
     
     async def check_decision_times():
         """Background task to check if connections are ready for decisions"""
@@ -606,6 +687,89 @@ def main():
             await ctx.send(f"⚠️ Couldn't send DM. Make sure both of you have DMs enabled!")
     
     @bot.command()
+    async def msg(ctx, recipient_name: str, *, message: str):
+        """Send a message to a connected teammate using their profile name
+        Usage: !msg John Hey, want to play Valorant?"""
+        sender_id = ctx.author.id
+        
+        if sender_id not in user_data:
+            await ctx.send("❌ You need to create a profile first! Use `!setup`")
+            return
+        
+        # Find the recipient among connections
+        recipient_id = None
+        user_connections = get_user_connections(sender_id)
+        
+        for connection_key in user_connections:
+            other_id = get_other_user_id(connection_key, sender_id)
+            if other_id in user_data:
+                if user_data[other_id].name.lower() == recipient_name.lower():
+                    recipient_id = other_id
+                    break
+        
+        if not recipient_id:
+            await ctx.send(f"❌ You're not connected with anyone named '{recipient_name}'.\nUse `!viewteam` to see your connections.")
+            return
+        
+        try:
+            recipient = await bot.fetch_user(recipient_id)
+            sender_name = user_data[sender_id].name
+            
+            # Create message embed
+            embed = discord.Embed(
+                description=message,
+                color=discord.Color.blue(),
+                timestamp=datetime.utcnow()
+            )
+            embed.set_author(name=f"Message from {sender_name}", icon_url=ctx.author.display_avatar.url)
+            embed.set_footer(text=f"Reply with: !msg {sender_name} <your message>")
+            
+            await recipient.send(embed=embed)
+            await ctx.send(f"✅ Message sent to {user_data[recipient_id].name}!")
+            
+        except Exception as e:
+            await ctx.send(f"❌ Failed to send message: {e}")
+    
+    @bot.command()
+    async def dm(ctx, member: discord.Member, *, message: str):
+        """Send a message to a connected teammate using Discord @mention
+        Usage: !dm @username Hey, want to play?"""
+        sender_id = ctx.author.id
+        
+        if sender_id not in user_data:
+            await ctx.send("❌ You need to create a profile first! Use `!setup`")
+            return
+        
+        if member.id not in user_data:
+            await ctx.send(f"❌ {member.display_name} doesn't have a profile!")
+            return
+        
+        # Check if connected
+        if not is_connected(sender_id, member.id):
+            await ctx.send(f"❌ You're not connected with {member.display_name}!\nUse `!connect @{member.name}` first.")
+            return
+        
+        try:
+            sender_name = user_data[sender_id].name
+            
+            # Create message embed
+            embed = discord.Embed(
+                description=message,
+                color=discord.Color.blue(),
+                timestamp=datetime.utcnow()
+            )
+            embed.set_author(name=f"Message from {sender_name}", icon_url=ctx.author.display_avatar.url)
+            embed.set_footer(text=f"Reply with: !dm @{ctx.author.name} <your message>")
+            
+            await member.send(embed=embed)
+            await ctx.send(f"✅ Message sent to {user_data[member.id].name}!")
+            
+        except discord.Forbidden:
+            await ctx.send(f"❌ Cannot send DM to {member.display_name}. They may have DMs disabled.")
+        except Exception as e:
+            await ctx.send(f"❌ Failed to send message: {e}")
+    
+    @bot.command()
     async def viewteam(ctx):
         """View your current active connections with detailed UI"""
         user_id = ctx.author.id
@@ -670,7 +834,8 @@ def main():
                     f"@{member.name}\n"
                     f"🎮 Common Games: {', '.join(calculate_match_score(user_data[user_id], other_person)['common_games'][:3])}\n"
                     f"📍 {other_person.location}\n"
-                    f"{status}"
+                    f"{status}\n"
+                    f"💬 Message: `!msg {other_person.name} <text>`"
                 )
                 
                 embed.add_field(
@@ -869,7 +1034,7 @@ def main():
                     
                     embed.add_field(
                         name=f"{status} - {other_person.name}",
-                        value=f"{other_user.mention} (`{other_user.name}`)\n👉 Click their name to DM!",
+                        value=f"{other_user.mention} (`{other_user.name}`)\n💬 `!msg {other_person.name} <message>`\n📧 `!dm @{other_user.name} <message>`",
                         inline=False
                     )
                 except:
@@ -897,8 +1062,8 @@ def main():
         embed.add_field(name="Username", value=f"`{member.name}`", inline=True)
         embed.add_field(name="Status", value="⭐ Permanent" if is_permanent else "⏰ Trial", inline=True)
         embed.add_field(
-            name="How to DM",
-            value="1️⃣ Click their name above\n2️⃣ Or copy username and search in Discord",
+            name="How to Message",
+            value=f"📝 `!msg {other_person.name} Your message here`\n📧 `!dm @{member.name} Your message here`",
             inline=False
         )
         
@@ -947,7 +1112,8 @@ def main():
                     f"@{member.name}\n"
                     f"🎮 Common Games: {', '.join(match_data['common_games'])}\n"
                     f"📍 {other_person.location}\n"
-                    f"📝 {other_person.bio[:50]}..." if len(other_person.bio) > 50 else other_person.bio
+                    f"📝 {other_person.bio[:50]}..." if len(other_person.bio) > 50 else other_person.bio + "\n"
+                    f"💬 `!msg {other_person.name} <message>`"
                 )
                 
                 embed.add_field(
@@ -962,7 +1128,8 @@ def main():
         
         await ctx.send(embed=embed)
 
-    async def help_gametalk(ctx):
+    @bot.command()
+    async def help(ctx):
         """Show all available commands"""
         embed = discord.Embed(
             title="🎮 GameTalk Bot - Commands",
@@ -986,7 +1153,6 @@ def main():
             value=(
                 "`!findmatch` - Find best matches\n"
                 "`!connect @user` - Connect with a match\n"
-                "`!chat [@user]` - Get DM info for teammates\n"  # ADD THIS LINE
                 "`!viewteam` - View all active connections\n"
                 "`!myteam` - View permanent teammates only\n"
                 "`!makedecision @user keep/release` - Decide after 30min\n"
@@ -996,8 +1162,19 @@ def main():
         )
         
         embed.add_field(
+            name="💬 Messaging Commands",
+            value=(
+                "`!msg <name> <message>` - Message by profile name\n"
+                "`!dm @user <message>` - Message by Discord @\n"
+                "`!chat [@user]` - Get messaging info\n"
+                "**Or just send a DM** if you have 1 connection!"
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
             name="ℹ️ System Info",
-            value=f"• Max {MAX_CONNECTIONS} connections per user\n• 30-minute trial period\n• Keep or release teammates",
+            value=f"• Max {MAX_CONNECTIONS} connections per user\n• 30-minute trial period\n• Keep or release teammates\n• Chat via bot relay",
             inline=False
         )
         
