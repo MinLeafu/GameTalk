@@ -829,6 +829,80 @@ def main():
                 
         except asyncio.TimeoutError:
             await ctx.send("⏱️ Removal cancelled - timed out.")
+            
+    @bot.command()
+    async def chat(ctx, member: discord.Member = None):
+        """Get DM information for your teammates"""
+        user_id = ctx.author.id
+        
+        if user_id not in user_data:
+            await ctx.send("❌ You need to create a profile first! Use `!setup`")
+            return
+        
+        user_connections = get_user_connections(user_id)
+        
+        if not user_connections:
+            await ctx.send("📭 You have no active connections yet! Use `!findmatch` to find matches.")
+            return
+        
+        # If no member specified, show all connections
+        if member is None:
+            embed = discord.Embed(
+                title="💬 Your Chat Connections",
+                description="Here are all your active teammates:",
+                color=discord.Color.blue()
+            )
+            
+            for connection_key in user_connections:
+                other_id = get_other_user_id(connection_key, user_id)
+                
+                if other_id not in user_data:
+                    continue
+                
+                other_person = user_data[other_id]
+                
+                try:
+                    other_user = await bot.fetch_user(other_id)
+                    
+                    is_permanent = active_connections[connection_key].get('permanent', False)
+                    status = "⭐ Permanent" if is_permanent else "⏰ Trial"
+                    
+                    embed.add_field(
+                        name=f"{status} - {other_person.name}",
+                        value=f"{other_user.mention} (`{other_user.name}`)\n👉 Click their name to DM!",
+                        inline=False
+                    )
+                except:
+                    pass
+            
+            embed.set_footer(text="Use !chat @user to get specific DM info")
+            await ctx.send(embed=embed)
+            return
+        
+        # If member specified, show info for that specific connection
+        connection_key = get_connection_key(user_id, member.id)
+        
+        if connection_key not in active_connections:
+            await ctx.send(f"❌ You're not connected with {member.display_name}!")
+            return
+        
+        other_person = user_data[member.id]
+        is_permanent = active_connections[connection_key].get('permanent', False)
+        
+        embed = discord.Embed(
+            title=f"💬 Chat with {other_person.name}",
+            description=f"{member.mention}",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Username", value=f"`{member.name}`", inline=True)
+        embed.add_field(name="Status", value="⭐ Permanent" if is_permanent else "⏰ Trial", inline=True)
+        embed.add_field(
+            name="How to DM",
+            value="1️⃣ Click their name above\n2️⃣ Or copy username and search in Discord",
+            inline=False
+        )
+        
+        await ctx.send(embed=embed)
 
     @bot.command()
     async def myteam(ctx):
@@ -912,8 +986,11 @@ def main():
             value=(
                 "`!findmatch` - Find best matches\n"
                 "`!connect @user` - Connect with a match\n"
-                "`!viewteam` - View your active team\n"
-                f"`!makedecision @user keep/release` - Decide after 30min"
+                "`!chat [@user]` - Get DM info for teammates\n"  # ADD THIS LINE
+                "`!viewteam` - View all active connections\n"
+                "`!myteam` - View permanent teammates only\n"
+                "`!makedecision @user keep/release` - Decide after 30min\n"
+                "`!removemember @user` - Remove a permanent teammate"
             ),
             inline=False
         )
