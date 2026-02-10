@@ -83,7 +83,7 @@ class MRTSelectView(View):
     def add_station_select(self):
         # Split stations into groups of 25 (Discord limit per select menu)
         select1 = Select(
-            placeholder="Choose your nearest MRT station (A-K)",
+            placeholder="Choose your nearest MRT station (1)",
             options=[
                 discord.SelectOption(label=station, value=station)
                 for station in ALL_MRT_STATIONS[:25]
@@ -94,7 +94,7 @@ class MRTSelectView(View):
         
         if len(ALL_MRT_STATIONS) > 25:
             select2 = Select(
-                placeholder="Choose your nearest MRT station (L-Z)",
+                placeholder="Choose your nearest MRT station (2)",
                 options=[
                     discord.SelectOption(label=station, value=station)
                     for station in ALL_MRT_STATIONS[25:50]
@@ -105,7 +105,7 @@ class MRTSelectView(View):
         
         if len(ALL_MRT_STATIONS) > 50:
             select3 = Select(
-                placeholder="More MRT stations",
+                placeholder="Choose your nearest MRT station (3)",
                 options=[
                     discord.SelectOption(label=station, value=station)
                     for station in ALL_MRT_STATIONS[50:75]
@@ -116,7 +116,7 @@ class MRTSelectView(View):
         
         if len(ALL_MRT_STATIONS) > 75:
             select4 = Select(
-                placeholder="Additional MRT stations",
+                placeholder="Choose your nearest MRT station (4)",
                 options=[
                     discord.SelectOption(label=station, value=station)
                     for station in ALL_MRT_STATIONS[75:100]
@@ -127,7 +127,7 @@ class MRTSelectView(View):
         
         if len(ALL_MRT_STATIONS) > 100:
             select5 = Select(
-                placeholder="More stations",
+                placeholder="Choose your nearest MRT station (5)",
                 options=[
                     discord.SelectOption(label=station, value=station)
                     for station in ALL_MRT_STATIONS[100:min(125, len(ALL_MRT_STATIONS))]
